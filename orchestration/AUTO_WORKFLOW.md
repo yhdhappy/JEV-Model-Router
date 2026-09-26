@@ -5,10 +5,13 @@
 项目负责人只与 **总顾问** 沟通。
 
 唯一总顾问：
-- ChatGPT 网页版
-- GPT-5.6 Sol
-- Thinking: High
-- 通过 WebCodex Mac 读取项目、调用 Paseo CLI、检查代码/测试/Git，并作最终决策
+- 运行位置：**网页版 ChatGPT**
+- 模型：**GPT-5.6 Sol**
+- Thinking：**High**
+- 执行工具：**WebCodex Mac**
+- 身份定义：**总顾问就是网页版 ChatGPT 中当前运行的 GPT-5.6 Sol High。**
+- WebCodex Mac 不是总顾问，也不是独立 Agent；它只是 GPT-5.6 Sol High 操作本机项目、读取文件、调用 Paseo CLI、检查代码/测试/Git、执行 commit/push 的工具通道。
+- PASEO 中不存在另一个“总顾问 Agent”；PASEO 只承载开发 Agent 和审核 Agent。
 
 执行层：
 - 开发 Agent：Paseo → Codex → GPT-5.6 Luna → High → Auto-review
@@ -20,6 +23,37 @@
 ---
 
 ## 2. 总顾问职责
+
+### 2.1 总顾问身份不可替换
+
+本工作流中的“总顾问”一词，始终且只指：
+
+**网页版 ChatGPT → GPT-5.6 Sol → High。**
+
+总顾问通过 **WebCodex Mac** 完成本地执行职责。
+
+控制链固定为：
+
+    项目负责人
+       ↓
+    网页版 ChatGPT / GPT-5.6 Sol High【唯一总顾问】
+       ↓
+    WebCodex Mac【本机执行/控制工具】
+       ↓
+    PASEO CLI
+       ↓
+    开发 Agent / 审核 Agent
+
+必须明确区分：
+- GPT-5.6 Sol High = 决策者、总顾问。
+- WebCodex Mac = 工具，不拥有独立项目决策权。
+- PASEO = 执行 Agent 管理与运行平台，不承担总顾问职责。
+- Codex GPT-5.6 Luna = 开发执行者。
+- Pi + DeepSeek V4.1 Flash = 独立审核者。
+
+除非项目负责人明确修改本工作流，否则不得把 PASEO 内任何 Agent、Codex、Pi、WebCodex Mac 本身或其他模型提升为总顾问。
+
+### 2.2 总顾问工作职责
 
 总顾问是唯一项目经理、架构把关者、验收者和调度者。
 

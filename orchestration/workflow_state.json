@@ -1,11 +1,15 @@
 {
-  "workflow_version": "1.0",
+  "workflow_version": "1.1",
   "project": "JEV Model Router",
   "advisor": {
+    "identity": "ChatGPT Web GPT-5.6 Sol High",
     "surface": "ChatGPT Web",
     "model": "GPT-5.6 Sol",
     "thinking": "High",
-    "control_channel": "WebCodex Mac"
+    "control_channel": "WebCodex Mac",
+    "is_paseo_agent": false,
+    "webcodex_role": "execution_tool_only",
+    "paseo_role": "developer_and_reviewer_runtime_only"
   },
   "developer": {
     "provider": "codex",
