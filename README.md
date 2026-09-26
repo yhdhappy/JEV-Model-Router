@@ -11,8 +11,9 @@
 - T-06：Policy Engine（task_type/capability/enabled 过滤、确定性成本代理排序、primary + fallback 与可解释 reason）
 - T-07：成本计算（Token 费用、classifier/execution/fallback 分项、production 总成本、精确/估算成本标记）
 - T-08：Fallback 与 Budget Guard（JEV safe-default 信号、模型 fallback、单任务预算守卫、manual model 预算约束）
+- T-09：Router Core（manual / light rule / JEV / policy / provider / fallback / cost 全链串联，终态 result_sink 接口）
 
-当前下一任务：**T-09 Router Core**。
+当前下一任务：**T-10 JSONL 日志**。
 
 阶段 1 暂不开发 UI，不接真实 Agent Adapter。
 
