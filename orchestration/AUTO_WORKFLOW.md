@@ -17,6 +17,13 @@
 - 开发 Agent：Paseo → Codex → GPT-5.6 Luna → High → Auto-review
 - 审核 Agent：Paseo → Pi → DeepSeek V4.1 Flash → Medium
 
+固定项目工作目录：
+- `/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router`
+- 总顾问通过 WebCodex Mac 的所有项目操作必须以该目录为项目根目录。
+- 开发 Agent 与审核 Agent 的 cwd 必须是该目录。
+- 所有代码、测试、文档、工作流状态、Git 操作和产出均在该目录内完成。
+- 不得把项目工作产出写到其他目录；临时系统文件除外，且不得作为项目交付物。
+
 任何执行 Agent 都无权自行进入下一个 T-xx。
 只有总顾问可以宣布当前任务通过并启动下一任务。
 

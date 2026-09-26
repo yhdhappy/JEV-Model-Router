@@ -26,5 +26,13 @@
   "current_task": "T-03",
   "status": "ready",
   "retry_count": 0,
-  "stop_reason": null
+  "stop_reason": null,
+  "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
+  "workspace_policy": {
+    "fixed_project_root": true,
+    "advisor_webcodex_project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
+    "developer_cwd": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
+    "reviewer_cwd": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
+    "all_project_outputs_must_remain_under_root": true
+  }
 }

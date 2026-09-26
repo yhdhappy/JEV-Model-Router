@@ -1,5 +1,12 @@
 # Role Contracts
 
+## 固定项目目录
+- 唯一项目根目录：`/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router`
+- Advisor / Developer / Reviewer 的所有项目工作都必须在该目录下完成。
+- PASEO 启动开发/审核 Agent 时必须把 cwd 指向该目录。
+- WebCodex Mac 对本项目的读写、测试、Git、commit/push 也必须绑定该目录。
+- 不得在其他项目目录执行本项目任务。
+
 ## Advisor / 总顾问
 
 固定身份：
