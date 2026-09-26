@@ -1,5 +1,5 @@
 {
-  "workflow_version": "1.1",
+  "workflow_version": "1.2",
   "project": "JEV Model Router",
   "advisor": {
     "identity": "ChatGPT Web GPT-5.6 Sol High",
@@ -34,5 +34,20 @@
     "developer_cwd": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
     "reviewer_cwd": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
     "all_project_outputs_must_remain_under_root": true
+  },
+  "blocker_policy": {
+    "stop_all_running_project_agents": true,
+    "start_no_new_agents_until_owner_decision": true,
+    "preserve_sessions_logs_code_and_git_state": true,
+    "set_status_to": "blocked",
+    "advisor_reports_in_plain_language": true,
+    "report_fields": [
+      "where_blocked",
+      "why_blocked",
+      "what_was_tried",
+      "what_failed",
+      "project_or_data_risk",
+      "owner_decision_needed"
+    ]
   }
 }
