@@ -1,0 +1,26 @@
+{
+  "workflow_version": "1.0",
+  "project": "JEV Model Router",
+  "advisor": {
+    "surface": "ChatGPT Web",
+    "model": "GPT-5.6 Sol",
+    "thinking": "High",
+    "control_channel": "WebCodex Mac"
+  },
+  "developer": {
+    "provider": "codex",
+    "model": "gpt-5.6-luna",
+    "thinking": "high",
+    "mode": "auto-review"
+  },
+  "reviewer": {
+    "provider": "pi",
+    "model": "opencode-go/deepseek-v4.1-flash",
+    "thinking": "medium"
+  },
+  "last_completed_task": "T-02",
+  "current_task": "T-03",
+  "status": "ready",
+  "retry_count": 0,
+  "stop_reason": null
+}
