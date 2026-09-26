@@ -5,8 +5,9 @@
 已完成：
 - T-01：项目骨架、核心 Schema、错误类型和 Schema 测试
 - T-02：Model Registry（models.yaml 加载、能力/任务类型/价格/enabled 校验）
+- T-03：Lightweight Rule Engine（白名单规则、高置信守卫、单步降级、rule_id 留痕）
 
-当前下一任务：**T-03 Lightweight Rule Engine**。
+当前下一任务：**T-04 JEV Classifier**。
 
 阶段 1 暂不开发 UI，不接真实 Agent Adapter。
 
