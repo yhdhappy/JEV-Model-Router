@@ -15,3 +15,13 @@ class ConfigurationError(RouterError):
 
 class BudgetExceededError(RouterError):
     """Raised when a request would exceed its configured budget."""
+
+
+class NoEligibleModelError(RouterError):
+    """Raised when policy filtering leaves no executable model."""
+
+    code = "no_eligible_model"
+
+    def __init__(self, message: str, reasons=()):
+        self.reasons = tuple(reasons)
+        super().__init__(message)
