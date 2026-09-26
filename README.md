@@ -12,8 +12,9 @@
 - T-07：成本计算（Token 费用、classifier/execution/fallback 分项、production 总成本、精确/估算成本标记）
 - T-08：Fallback 与 Budget Guard（JEV safe-default 信号、模型 fallback、单任务预算守卫、manual model 预算约束）
 - T-09：Router Core（manual / light rule / JEV / policy / provider / fallback / cost 全链串联，终态 result_sink 接口）
+- T-10：JSONL 日志（默认最小安全投影、追加写入、脱敏、成本/fallback/错误码可追踪）
 
-当前下一任务：**T-10 JSONL 日志**。
+当前下一任务：**T-11 CLI**。
 
 阶段 1 暂不开发 UI，不接真实 Agent Adapter。
 
