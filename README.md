@@ -9,8 +9,9 @@
 - T-04：JEV Classifier（版本化 Prompt、JSON 解析、Schema 校验、可注入调用边界）
 - T-05：Provider 抽象与 Mock Provider（统一 invoke 契约、确定性 success/timeout/unavailable/error 故障注入）
 - T-06：Policy Engine（task_type/capability/enabled 过滤、确定性成本代理排序、primary + fallback 与可解释 reason）
+- T-07：成本计算（Token 费用、classifier/execution/fallback 分项、production 总成本、精确/估算成本标记）
 
-当前下一任务：**T-07 成本计算**。
+当前下一任务：**T-08 Fallback 与 Budget Guard**。
 
 阶段 1 暂不开发 UI，不接真实 Agent Adapter。
 

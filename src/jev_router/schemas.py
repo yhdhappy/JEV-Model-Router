@@ -1,9 +1,10 @@
 """Strict schemas shared by the stage-1 router components."""
 
 from enum import Enum
+from math import isclose, isfinite
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class StrictModel(BaseModel):
@@ -77,6 +78,39 @@ class CostBreakdown(StrictModel):
     cost_estimation_source: Optional[
         Literal["provider_usage", "local_tokenizer", "heuristic"]
     ] = None
+
+    @model_validator(mode="after")
+    def validate_production_cost_contract(self) -> "CostBreakdown":
+        expected_total = (
+            self.classifier_cost + self.execution_cost + self.fallback_cost
+        )
+        if not isfinite(expected_total) or not isfinite(self.total_production_cost):
+            raise ValueError("production costs must be finite")
+        if not isclose(
+            self.total_production_cost,
+            expected_total,
+            rel_tol=1e-9,
+            abs_tol=1e-12,
+        ):
+            raise ValueError(
+                "total_production_cost must equal classifier_cost + "
+                "execution_cost + fallback_cost"
+            )
+        if self.cost_estimated:
+            if self.cost_estimation_source not in {
+                "local_tokenizer",
+                "heuristic",
+            }:
+                raise ValueError(
+                    "estimated production cost requires local_tokenizer or "
+                    "heuristic cost_estimation_source"
+                )
+        elif self.cost_estimation_source not in {None, "provider_usage"}:
+            raise ValueError(
+                "exact production cost may only use provider_usage or no "
+                "cost_estimation_source"
+            )
+        return self
 
 
 class RouteError(StrictModel):
