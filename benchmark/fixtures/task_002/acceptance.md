@@ -1,5 +1,12 @@
-# Pre-run acceptance slot
+# Pre-run acceptance criteria
 
-- [ ] FILL_BEFORE_PILOT: define the acceptance checks for this task.
-- [ ] FILL_BEFORE_PILOT: define the evidence to collect before evaluation.
-- [ ] FILL_BEFORE_PILOT: define the allowed modification boundary.
+These criteria define the real Pilot check; this fixture records no execution
+result.
+
+- [ ] Only `README.md` may change; this boundary is encoded by
+      `acceptance.allowed_paths`.
+- [ ] The old `rg -n 'FILL_BEFORE_PILOT' benchmark/fixtures` command is removed.
+- [ ] The new `grep -R -n 'FILL_BEFORE_PILOT' benchmark/fixtures` command is
+      present.
+- [ ] No README content changes beyond that single command replacement.
+- [ ] No fabricated pass, score, or Pilot result is recorded before execution.

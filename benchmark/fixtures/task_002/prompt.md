@@ -1,4 +1,13 @@
-# Pre-run prompt slot
+Modify only `README.md`. Replace exactly this command:
 
-FILL_BEFORE_PILOT: replace this line with an approved real task prompt.
-FILL_BEFORE_PILOT: do not add sensitive data or a fabricated result to this template.
+```text
+rg -n 'FILL_BEFORE_PILOT' benchmark/fixtures
+```
+
+with this portable form:
+
+```text
+grep -R -n 'FILL_BEFORE_PILOT' benchmark/fixtures
+```
+
+Make no other change to `README.md` and do not modify any other file.

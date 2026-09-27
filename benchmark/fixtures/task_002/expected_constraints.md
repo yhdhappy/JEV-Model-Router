@@ -1,5 +1,6 @@
-# Constraint slots
+# Expected paths
 
-- FILL_BEFORE_PILOT: list allowed paths.
-- FILL_BEFORE_PILOT: list required or expected paths.
-- FILL_BEFORE_PILOT: list forbidden paths.
+- README.md
+
+Only `README.md` may be changed; `acceptance.allowed_paths` enforces this
+runner-compatible path boundary. No unrelated changes are expected.

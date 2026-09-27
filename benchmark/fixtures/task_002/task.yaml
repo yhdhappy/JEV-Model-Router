@@ -1,12 +1,20 @@
-# T-14 template only. Replace every FILL_BEFORE_PILOT value before any run.
+# Prepared task definition. Real execution remains blocked until the gate below
+# is cleared; no Pilot result is recorded here.
 id: task_002
-name: "T-14 Pilot template task_002"
+name: "Replace the README fixture-inspection command with portable grep"
 test_purpose_slot: "mechanical/small change"
 frozen_plan_purpose: "verify low-cost model"
-difficulty_expected_bucket: FILL_BEFORE_PILOT
-baseline_model: FILL_BEFORE_PILOT
-budget_limit: FILL_BEFORE_PILOT
+difficulty_expected_bucket: low
+baseline_model: FILL_BEFORE_REAL_PILOT
+budget_limit: FILL_BEFORE_REAL_PILOT
+pilot_execution_gate: real_provider_and_pricing_required
 fixture:
   reset_before_run: true
 acceptance:
-  mode: manual
+  mode: automated
+  allowed_paths:
+    - README.md
+  command:
+    - python3
+    - -c
+    - "from pathlib import Path; text = Path(\"README.md\").read_text(encoding=\"utf-8\"); old = \"rg -n 'FILL_BEFORE_PILOT' benchmark/fixtures\"; new = \"grep -R -n 'FILL_BEFORE_PILOT' benchmark/fixtures\"; assert text.count(new) == 1; assert old not in text"

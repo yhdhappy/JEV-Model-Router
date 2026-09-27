@@ -23,7 +23,7 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_PREP_task_002",
+  "current_task": "PILOT_PREP_task_003",
   "status": "pilot_preparation",
   "retry_count": 0,
   "stop_reason": null,
@@ -52,9 +52,10 @@
   },
   "pilot_preparation": {
     "prepared_tasks": [
-      "task_001"
+      "task_001",
+      "task_002"
     ],
-    "current_task": "task_002",
+    "current_task": "task_003",
     "execution_gate": "real_provider_and_pricing_required",
     "real_pilot_started": false
   }

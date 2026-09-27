@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).parents[1]
 FIXTURE_ROOT = PROJECT_ROOT / "benchmark" / "fixtures"
 PLACEHOLDER = "FILL_BEFORE_PILOT"
 REAL_PILOT_SENTINEL = "FILL_BEFORE_REAL_PILOT"
-PREPARED_TASK_ID = "task_001"
+PREPARED_TASK_IDS = {"task_001", "task_002"}
 
 TASK_SLOTS = {
     "task_001": ("light/file simple", "verify lightweight rule"),
@@ -52,7 +52,7 @@ def _fixture_paths():
 
 
 def _template_task_ids():
-    return [task_id for task_id in TASK_SLOTS if task_id != PREPARED_TASK_ID]
+    return [task_id for task_id in TASK_SLOTS if task_id not in PREPARED_TASK_IDS]
 
 
 def _template_text(fixture: Path) -> str:
@@ -79,7 +79,7 @@ def test_all_ten_fixtures_have_exact_documented_structure():
         assert {path.name for path in fixture.iterdir()} == REQUIRED_TOP_LEVEL
         assert (fixture / "initial_state").is_dir()
         initial_names = [path.name for path in (fixture / "initial_state").iterdir()]
-        if fixture.name == PREPARED_TASK_ID:
+        if fixture.name in PREPARED_TASK_IDS:
             assert initial_names == ["README.md"]
             assert not (fixture / "initial_state" / "README.md").is_symlink()
         else:
@@ -121,11 +121,11 @@ def test_templates_contain_no_obvious_business_data_or_pilot_results(task_id):
 
 
 def test_task_001_is_prepared_as_a_real_read_task_but_blocked_before_pilot():
-    fixture = FIXTURE_ROOT / PREPARED_TASK_ID
+    fixture = FIXTURE_ROOT / "task_001"
     spec = load_fixture(fixture)
     config = spec.task_metadata
 
-    assert spec.task_id == PREPARED_TASK_ID
+    assert spec.task_id == "task_001"
     assert spec.prompt == "读取 README.md\n"
     assert config["test_purpose_slot"] == "light/file simple"
     assert config["frozen_plan_purpose"] == "verify lightweight rule"
@@ -142,8 +142,8 @@ def test_task_001_is_prepared_as_a_real_read_task_but_blocked_before_pilot():
     assert spec.expected_paths == ("README.md",)
     assert spec.forbidden_paths == ()
 
-    initial_readme = (fixture / "initial_state" / "README.md").read_text(encoding="utf-8")
-    current_readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    initial_readme = (fixture / "initial_state" / "README.md").read_bytes()
+    current_readme = (PROJECT_ROOT / "README.md").read_bytes()
     assert initial_readme == current_readme
 
     fixture_text = _template_text(fixture)
@@ -155,9 +155,55 @@ def test_task_001_is_prepared_as_a_real_read_task_but_blocked_before_pilot():
     assert "model response" in acceptance_text
 
 
+def test_task_002_is_prepared_as_a_real_readme_change_but_blocked_before_pilot():
+    fixture = FIXTURE_ROOT / "task_002"
+    spec = load_fixture(fixture)
+    config = spec.task_metadata
+
+    assert spec.task_id == "task_002"
+    assert config["name"] == "Replace the README fixture-inspection command with portable grep"
+    assert config["test_purpose_slot"] == "mechanical/small change"
+    assert config["frozen_plan_purpose"] == "verify low-cost model"
+    assert config["difficulty_expected_bucket"] == "low"
+    assert config["baseline_model"] == REAL_PILOT_SENTINEL
+    assert config["budget_limit"] == REAL_PILOT_SENTINEL
+    assert config["pilot_execution_gate"] == "real_provider_and_pricing_required"
+    assert config["fixture"]["reset_before_run"] is True
+    assert config["acceptance"]["mode"] == "automated"
+    assert config["acceptance"]["allowed_paths"] == ["README.md"]
+    assert spec.acceptance_mode == "automated"
+    assert spec.acceptance_command is not None
+    assert spec.acceptance_command[:2] == ("python3", "-c")
+    assert spec.allowed_paths == ("README.md",)
+    assert spec.allowed_paths_explicit is True
+    assert spec.expected_paths == ("README.md",)
+    assert spec.forbidden_paths == ()
+
+    initial_readme = (fixture / "initial_state" / "README.md").read_bytes()
+    current_readme = (PROJECT_ROOT / "README.md").read_bytes()
+    assert initial_readme == current_readme
+
+    old_command = "rg -n 'FILL_BEFORE_PILOT' benchmark/fixtures"
+    new_command = "grep -R -n 'FILL_BEFORE_PILOT' benchmark/fixtures"
+    assert old_command in spec.prompt
+    assert new_command in spec.prompt
+    assert "Modify only `README.md`" in spec.prompt
+    assert "do not modify any other file" in spec.prompt
+
+    command_text = spec.acceptance_command[2]
+    assert old_command in command_text
+    assert new_command in command_text
+    assert "text.count(new) == 1" in command_text
+    assert "old not in text" in command_text
+
+    fixture_text = _template_text(fixture)
+    assert "FILL_BEFORE_PILOT: replace" not in fixture_text
+    assert not FABRICATED_RESULT.search(fixture_text)
+
+
 def test_task_001_prompt_hits_low_lightweight_read_rule():
     result = LightweightRuleEngine().evaluate(
-        RouteRequest(task_id=PREPARED_TASK_ID, prompt="读取 README.md")
+        RouteRequest(task_id="task_001", prompt="读取 README.md")
     )
 
     assert result.matched is True
