@@ -69,6 +69,44 @@ def test_complete_provider_response_is_exact_and_records_provider_usage():
     )
 
 
+def test_provider_reported_cost_wins_over_static_registry_prices():
+    component = calculate_cost_from_response(
+        ModelResponse(
+            text="answer",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            provider_reported_cost=0.17,
+        ),
+        input_price=0.15,
+        output_price=0.50,
+    )
+
+    assert component == CostComponent(
+        cost=0.17,
+        cost_estimated=False,
+        cost_estimation_source="provider_usage",
+    )
+
+
+def test_variable_provider_without_reported_cost_is_an_estimate():
+    component = calculate_cost_from_response(
+        ModelResponse(
+            text="answer",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+            provider_pricing_is_variable=True,
+        ),
+        input_price=0.15,
+        output_price=0.50,
+    )
+
+    assert component == CostComponent(
+        cost=0.65,
+        cost_estimated=True,
+        cost_estimation_source="heuristic",
+    )
+
+
 def test_complete_usage_can_be_marked_as_local_tokenizer_estimate():
     component = calculate_cost_from_usage(
         TokenUsage(input_tokens=1_000, output_tokens=500),

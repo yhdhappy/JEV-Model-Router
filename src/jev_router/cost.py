@@ -87,6 +87,23 @@ def calculate_cost_from_response(
 
     if not isinstance(response, ModelResponse):
         raise TypeError("response must be a ModelResponse")
+    if response.provider_reported_cost is not None:
+        return CostComponent(
+            cost=response.provider_reported_cost,
+            cost_estimated=False,
+            cost_estimation_source="provider_usage",
+        )
+    if response.provider_pricing_is_variable:
+        return CostComponent(
+            cost=calculate_model_cost(
+                response.input_tokens,
+                response.output_tokens,
+                input_price,
+                output_price,
+            ),
+            cost_estimated=True,
+            cost_estimation_source="heuristic",
+        )
     return CostComponent(
         cost=calculate_model_cost(
             response.input_tokens,

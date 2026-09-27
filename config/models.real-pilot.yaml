@@ -1,0 +1,44 @@
+# Non-secret real-provider gate configuration. This file is not the Stage-1
+# placeholder registry and does not authorize the 10-task Pilot. Registry
+# prices are fallback estimates only; provider-reported execution cost wins.
+models:
+  low_model:
+    provider: opencode_go
+    model_id: opencode-go/glm-5.3-flash
+    capability: low
+    task_types:
+      - coding
+      - debugging
+    input_cost_per_million: 0.15
+    output_cost_per_million: 0.50
+    enabled: true
+
+  medium_model:
+    provider: opencode_go
+    model_id: opencode-go/qwen3.8-flash
+    capability: medium
+    task_types:
+      - coding
+      - debugging
+      - testing
+      - review
+    input_cost_per_million: 0.15
+    output_cost_per_million: 0.47
+    enabled: true
+
+  high_model:
+    provider: opencode_go
+    model_id: opencode-go/gpt-5.6-luna
+    capability: high
+    task_types:
+      - coding
+      - debugging
+      - testing
+      - review
+      - architecture
+      - research
+      - reasoning
+    # Current fallback estimate for the <=272K pricing band.
+    input_cost_per_million: 0.20
+    output_cost_per_million: 1.20
+    enabled: true

@@ -37,6 +37,30 @@ class ModelResponse(StrictModel):
     provider_request_id: Optional[str] = None
     latency_ms: Optional[StrictInt] = Field(default=None, ge=0)
     raw_finish_reason: Optional[str] = None
+    provider_reported_cost: Optional[float] = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
+    reasoning_tokens: Optional[StrictInt] = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
+    cache_read_tokens: Optional[StrictInt] = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
+    cache_write_tokens: Optional[StrictInt] = Field(
+        default=None,
+        ge=0,
+        exclude_if=lambda value: value is None,
+    )
+    provider_pricing_is_variable: bool = Field(
+        default=False,
+        exclude_if=lambda value: value is False,
+    )
 
 
 class ProviderError(RouterError):

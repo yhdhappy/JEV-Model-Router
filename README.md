@@ -99,9 +99,9 @@ git diff --check
 
 这不表示真实 10-task Pilot 已经运行。当前状态仍是 `real_pilot_started=false`：
 
-- `task_001`～`task_009` 已有真实 Prompt、初始快照和验收标准，但真实执行仍被 `real_provider_and_pricing_required` 闸门阻挡。
-- `task_003`～`task_009` 的 `baseline_model` / `budget_limit` 继续保留 `FILL_BEFORE_REAL_PILOT`，避免编造真实模型或价格。
-- `task_010_fallback` 仅允许使用现有 T-13 受控 Mock 故障入口，不代表真实 Provider 已验证。
+- 真实 Provider Gate 已通过：JEV System One 与本机 OpenCode Go 已完成真实端到端单请求验证，Router 能取得 JEV 分类、真实模型执行结果、usage 和 provider-reported cost。
+- `task_003`～`task_009` fixture 内的 `FILL_BEFORE_REAL_PILOT` 仍保留为冻结快照中的执行前占位，不代表真实 Provider 未接通；正式 Pilot runner 会在运行时注入真实模型层级和预算。
+- `task_010_fallback` 继续使用 T-13 受控 Mock 故障入口，用来验证 fallback / Budget Guard，不冒充真实 Provider 成功。
 - 在获得真实 Pilot 数据前，不预填结果、分数或 Go / Adjust / Stop 判断。
 
 检查 10 个已准备任务的结构与状态：
@@ -112,15 +112,15 @@ rg -n 'FILL_BEFORE_REAL_PILOT|controlled_mock_only_not_real_provider' benchmark/
 .venv/bin/python -m pytest -q tests/test_pilot_templates.py
 ```
 
-不要把 `pilot` CLI 的委托命令误当作真实 Pilot 已经执行。当前下一道正式闸门是接入真实 Provider、模型 ID、价格和凭证引用；这些条件满足后，才允许运行真实 10-task Pilot。
+不要把 `pilot` CLI 的委托命令误当作真实 Pilot 已经执行。真实 Provider / 模型 / 成本 Gate 已通过；当前下一道正式闸门是 `PILOT_RUNNER_WIRING`：把每个 fixture 的隔离 workspace、Router、`auto=True` 执行、验收和结果持久化串成真实 Pilot runner。
 
 ## 安全与阶段边界
 
-- 不需要真实 API Key；任何凭证都不得进入 repo、fixture、JSONL、终端输出或提交。
-- 当前验证只使用本地代码和 Mock Provider；没有 UI、真实 Agent Adapter 或真实网络 Provider 集成。
-- CLI help 或配置校验不能证明真实模型调用；本仓库当前验收信号限定在 Router Core、Mock、fixture 和静态/本地测试证据。
+- 真实 Provider smoke 需要运行时凭证，但凭证只能由本机安全路径/认证环境提供；任何 Key 都不得进入 repo、fixture、JSONL、终端输出或提交。
+- 当前已经具备真实 JEV HTTP adapter 与本机 OpenCode Go execution provider；仍没有 UI，也没有面向外部 Agent 产品的正式 Adapter。
+- 真实 Provider Gate 的验收证据包含真实 JEV + Router + OpenCode Go 单请求 smoke；这仍不等于 10-task Pilot 已经执行。
 - 阶段 1 的成功信号是：配置校验通过、T-15 smoke 通过、指定回归通过、完整 pytest 通过、compileall 和 `git diff --check` 无错误。完整测试数量会随后续合法测试变更而变化，因此不在此处硬编码固定总数。
 
 ## 当前交接边界
 
-T-15 已由开发、独立审核和总顾问验收通过。10 个 Pilot 任务定义也已经全部准备完成并通过独立审核，但真实 Pilot 尚未开始。当前唯一执行闸门是 `real_provider_and_pricing_required`；在真实 Provider、模型 ID、价格和凭证引用配置完成前，不运行真实 Pilot，也不作 Go / Adjust / Stop 判断。
+T-15 与 10 个 Pilot 任务准备均已完成。真实 Provider / 模型 / 成本 Gate 也已通过真实端到端 smoke；真实 Pilot 尚未开始。当前执行闸门是 `PILOT_RUNNER_WIRING`，完成 fixture workspace → Router → OpenCode Go → acceptance → result persistence 接线后，才运行正式 10-task Pilot；在获得真实 Pilot 数据前不作 Go / Adjust / Stop 判断。
