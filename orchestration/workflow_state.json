@@ -23,8 +23,8 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_PREP_task_003",
-  "status": "pilot_preparation",
+  "current_task": "PILOT_EXECUTION_GATE",
+  "status": "pilot_ready_blocked_on_provider_pricing",
   "retry_count": 0,
   "stop_reason": null,
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
@@ -53,10 +53,19 @@
   "pilot_preparation": {
     "prepared_tasks": [
       "task_001",
-      "task_002"
+      "task_002",
+      "task_003",
+      "task_004",
+      "task_005",
+      "task_006",
+      "task_007",
+      "task_008",
+      "task_009",
+      "task_010_fallback"
     ],
-    "current_task": "task_003",
+    "current_task": null,
     "execution_gate": "real_provider_and_pricing_required",
+    "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": false
   }
 }

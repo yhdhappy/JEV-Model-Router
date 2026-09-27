@@ -1,12 +1,17 @@
-# T-14 template only. Replace every FILL_BEFORE_PILOT value before any run.
+# Prepared Pilot fixture. Real execution remains blocked until the gate below
+# is cleared; no Pilot result is recorded here.
 id: task_007
-name: "T-14 Pilot template task_007"
+name: "Review broad exception handling in routing and fallback"
+advisor: "ChatGPT Web GPT-5.6 Sol High"
 test_purpose_slot: "review/debug medium-high"
 frozen_plan_purpose: "complex analysis"
-difficulty_expected_bucket: FILL_BEFORE_PILOT
-baseline_model: FILL_BEFORE_PILOT
-budget_limit: FILL_BEFORE_PILOT
+difficulty_expected_bucket: high
+baseline_model: FILL_BEFORE_REAL_PILOT
+budget_limit: FILL_BEFORE_REAL_PILOT
+pilot_execution_gate: real_provider_and_pricing_required
 fixture:
   reset_before_run: true
 acceptance:
   mode: manual
+  allowed_paths:
+    - REVIEW.md

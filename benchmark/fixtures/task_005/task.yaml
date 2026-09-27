@@ -1,12 +1,18 @@
-# T-14 template only. Replace every FILL_BEFORE_PILOT value before any run.
+# Prepared Pilot fixture. Real execution remains blocked until the gate below
+# is cleared; no Pilot result is recorded here.
 id: task_005
-name: "T-14 Pilot template task_005"
+name: "Strengthen JSONL secret-redaction regression coverage"
+advisor: "ChatGPT Web GPT-5.6 Sol High"
 test_purpose_slot: "testing medium"
 frozen_plan_purpose: "testing task"
-difficulty_expected_bucket: FILL_BEFORE_PILOT
-baseline_model: FILL_BEFORE_PILOT
-budget_limit: FILL_BEFORE_PILOT
+difficulty_expected_bucket: medium
+baseline_model: FILL_BEFORE_REAL_PILOT
+budget_limit: FILL_BEFORE_REAL_PILOT
+pilot_execution_gate: real_provider_and_pricing_required
 fixture:
   reset_before_run: true
 acceptance:
   mode: manual
+  allowed_paths:
+    - src/jev_router/logging_store.py
+    - tests/test_logging_store.py

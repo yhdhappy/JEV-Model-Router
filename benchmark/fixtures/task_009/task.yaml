@@ -1,12 +1,17 @@
-# T-14 template only. Replace every FILL_BEFORE_PILOT value before any run.
+# Prepared Pilot fixture. Real execution remains blocked until the gate below
+# is cleared; no Pilot result is recorded here.
 id: task_009
-name: "T-14 Pilot template task_009"
+name: "Plan the real-provider Pilot integration boundary"
+advisor: "ChatGPT Web GPT-5.6 Sol High"
 test_purpose_slot: "architecture/reasoning high"
 frozen_plan_purpose: "high-capability-model necessity"
-difficulty_expected_bucket: FILL_BEFORE_PILOT
-baseline_model: FILL_BEFORE_PILOT
-budget_limit: FILL_BEFORE_PILOT
+difficulty_expected_bucket: high
+baseline_model: FILL_BEFORE_REAL_PILOT
+budget_limit: FILL_BEFORE_REAL_PILOT
+pilot_execution_gate: real_provider_and_pricing_required
 fixture:
   reset_before_run: true
 acceptance:
   mode: manual
+  allowed_paths:
+    - docs/REAL_PROVIDER_PILOT_INTEGRATION_PLAN.md

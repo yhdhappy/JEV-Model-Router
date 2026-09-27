@@ -1,15 +1,20 @@
-# T-14 template only. Replace every FILL_BEFORE_PILOT value before any run.
+# Prepared controlled-failure fixture. This is a local Mock task, not a
+# real-provider Pilot result.
 id: task_010_fallback
-name: "T-14 Pilot template task_010_fallback"
+name: "Generate a safe controlled fallback and budget-block report"
+advisor: "ChatGPT Web GPT-5.6 Sol High"
 test_purpose_slot: "controlled failure injection"
 frozen_plan_purpose: "fallback + budget"
-difficulty_expected_bucket: FILL_BEFORE_PILOT
-baseline_model: FILL_BEFORE_PILOT
-budget_limit: FILL_BEFORE_PILOT
+difficulty_expected_bucket: controlled_mock
+baseline_model: controlled_mock_only
+budget_limit: controlled_mock_only
+pilot_execution_gate: controlled_mock_only_not_real_provider
 fixture:
   reset_before_run: true
 acceptance:
   mode: manual
+  allowed_paths:
+    - failure_injection_report.json
 failure_injection:
   helper: "benchmark.failure_injection.run_failure_injection"
   documented_cases:

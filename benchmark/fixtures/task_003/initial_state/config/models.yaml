@@ -1,0 +1,42 @@
+models:
+  low_model:
+    provider: provider_a
+    model_id: actual-low-model-id
+    capability: low
+    task_types:
+      - file_operation
+      - coding
+    input_cost_per_million: 0
+    output_cost_per_million: 0
+    enabled: true
+    credential_ref: provider-a-main
+
+  medium_model:
+    provider: provider_b
+    model_id: actual-medium-model-id
+    capability: medium
+    task_types:
+      - coding
+      - debugging
+      - testing
+      - review
+    input_cost_per_million: 0
+    output_cost_per_million: 0
+    enabled: true
+    credential_ref: provider-b-main
+
+  high_model:
+    provider: provider_c
+    model_id: actual-high-model-id
+    capability: high
+    task_types:
+      - coding
+      - debugging
+      - testing
+      - review
+      - architecture
+      - reasoning
+    input_cost_per_million: 0
+    output_cost_per_million: 0
+    enabled: true
+    credential_ref: provider-c-main

@@ -93,21 +93,26 @@ PYTHONPYCACHEPREFIX=/private/tmp/jev-router-pycache \
 git diff --check
 ```
 
-## Pilot 模板：只检查，不填写
+## Pilot 任务准备状态
 
-T-14 只准备了结构模板。`benchmark/fixtures/task_001` 到 `task_009` 以及 `benchmark/fixtures/task_010_fallback` 都是模板，不是真实任务结果。
+`benchmark/fixtures/task_001` 到 `task_009` 以及 `benchmark/fixtures/task_010_fallback` 已经全部从空模板升级为可审查的 Pilot 任务定义。`task_001`～`task_009` 都来自当前仓库中的真实问题或真实下一步工作；`task_010_fallback` 是受控 Mock 故障注入任务。
 
-T-15 已通过，但这些目录当前仍是 `FILL_BEFORE_PILOT` 模板。只有在明确开始真实 10-task Pilot 准备时，才应逐项填入经过确认的 Prompt、模型、预算和验收条件；在真实 Pilot 运行前不得预填验收结果或 Go / Adjust / Stop 判断。`task_010_fallback` 继续复用已经定义的 T-13 受控故障入口。
+这不表示真实 10-task Pilot 已经运行。当前状态仍是 `real_pilot_started=false`：
 
-只读查看模板并验证结构：
+- `task_001`～`task_009` 已有真实 Prompt、初始快照和验收标准，但真实执行仍被 `real_provider_and_pricing_required` 闸门阻挡。
+- `task_003`～`task_009` 的 `baseline_model` / `budget_limit` 继续保留 `FILL_BEFORE_REAL_PILOT`，避免编造真实模型或价格。
+- `task_010_fallback` 仅允许使用现有 T-13 受控 Mock 故障入口，不代表真实 Provider 已验证。
+- 在获得真实 Pilot 数据前，不预填结果、分数或 Go / Adjust / Stop 判断。
+
+检查 10 个已准备任务的结构与状态：
 
 ```bash
 find benchmark/fixtures -mindepth 1 -maxdepth 1 -type d -print | sort
-rg -n 'FILL_BEFORE_PILOT' benchmark/fixtures
+rg -n 'FILL_BEFORE_REAL_PILOT|controlled_mock_only_not_real_provider' benchmark/fixtures/*/task.yaml
 .venv/bin/python -m pytest -q tests/test_pilot_templates.py
 ```
 
-不要把 `pilot` CLI 的委托命令误当作真实 Pilot 已经执行。当前仓库只完成了 Pilot 模板和技术闸门；下一步需要先明确并填充 10 个真实任务，再运行正式 Pilot。模板检查的目标仍是确认结构完整、未伪造结果、未写入未经确认的真实数据，并且 fixture 初始状态没有被污染。
+不要把 `pilot` CLI 的委托命令误当作真实 Pilot 已经执行。当前下一道正式闸门是接入真实 Provider、模型 ID、价格和凭证引用；这些条件满足后，才允许运行真实 10-task Pilot。
 
 ## 安全与阶段边界
 
@@ -118,4 +123,4 @@ rg -n 'FILL_BEFORE_PILOT' benchmark/fixtures
 
 ## 当前交接边界
 
-T-15 已由开发、独立审核和总顾问验收通过。阶段 1 到此结束，真实 Pilot 尚未开始。下一道闸门是：为 `task_001`..`task_010_fallback` 填写经过确认的真实任务内容并运行 10-task Pilot；在获得真实 Pilot 数据前，不作 Go / Adjust / Stop 判断。
+T-15 已由开发、独立审核和总顾问验收通过。10 个 Pilot 任务定义也已经全部准备完成并通过独立审核，但真实 Pilot 尚未开始。当前唯一执行闸门是 `real_provider_and_pricing_required`；在真实 Provider、模型 ID、价格和凭证引用配置完成前，不运行真实 Pilot，也不作 Go / Adjust / Stop 判断。

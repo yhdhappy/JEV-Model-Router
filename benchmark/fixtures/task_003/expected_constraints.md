@@ -1,5 +1,14 @@
-# Constraint slots
+# Expected paths
 
-- FILL_BEFORE_PILOT: list allowed paths.
-- FILL_BEFORE_PILOT: list required or expected paths.
-- FILL_BEFORE_PILOT: list forbidden paths.
+- pyproject.toml
+- config/models.yaml
+- src/jev_router/__init__.py
+- src/jev_router/errors.py
+- src/jev_router/registry.py
+- src/jev_router/schemas.py
+- tests/test_registry.py
+
+# Forbidden paths
+
+No other source, test, config, fixture, credential, or report path may be
+created or modified.
