@@ -1,12 +1,15 @@
-# T-14 template only. Replace every FILL_BEFORE_PILOT value before any run.
+# Prepared task definition. Real execution remains blocked until the gate below
+# is cleared; no Pilot result is recorded here.
 id: task_001
-name: "T-14 Pilot template task_001"
+name: "Read README.md with the Lightweight Rule"
 test_purpose_slot: "light/file simple"
 frozen_plan_purpose: "verify lightweight rule"
-difficulty_expected_bucket: FILL_BEFORE_PILOT
-baseline_model: FILL_BEFORE_PILOT
-budget_limit: FILL_BEFORE_PILOT
+difficulty_expected_bucket: low
+baseline_model: FILL_BEFORE_REAL_PILOT
+budget_limit: FILL_BEFORE_REAL_PILOT
+pilot_execution_gate: real_provider_and_pricing_required
 fixture:
   reset_before_run: true
 acceptance:
   mode: manual
+  allowed_paths: []

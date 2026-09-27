@@ -1,4 +1,4 @@
-"""T-14 Pilot template structure and anti-fabrication checks."""
+"""T-14 Pilot fixture structure and anti-fabrication checks."""
 
 from __future__ import annotations
 
@@ -8,11 +8,15 @@ from pathlib import Path
 import pytest
 
 from benchmark.runner import load_fixture
+from jev_router.rules import LightweightRuleEngine
+from jev_router.schemas import CapabilityLevel, RouteRequest
 
 
 PROJECT_ROOT = Path(__file__).parents[1]
 FIXTURE_ROOT = PROJECT_ROOT / "benchmark" / "fixtures"
 PLACEHOLDER = "FILL_BEFORE_PILOT"
+REAL_PILOT_SENTINEL = "FILL_BEFORE_REAL_PILOT"
+PREPARED_TASK_ID = "task_001"
 
 TASK_SLOTS = {
     "task_001": ("light/file simple", "verify lightweight rule"),
@@ -47,6 +51,10 @@ def _fixture_paths():
     return [FIXTURE_ROOT / task_id for task_id in TASK_SLOTS]
 
 
+def _template_task_ids():
+    return [task_id for task_id in TASK_SLOTS if task_id != PREPARED_TASK_ID]
+
+
 def _template_text(fixture: Path) -> str:
     return "\n".join(
         (fixture / name).read_text(encoding="utf-8")
@@ -63,19 +71,24 @@ def _assert_placeholder_document(text: str) -> None:
         assert line.startswith(PLACEHOLDER)
 
 
-def test_all_ten_templates_have_exact_documented_structure():
+def test_all_ten_fixtures_have_exact_documented_structure():
     assert FIXTURE_ROOT.is_dir()
     assert {path.name for path in FIXTURE_ROOT.iterdir()} == set(TASK_SLOTS)
 
     for fixture in _fixture_paths():
         assert {path.name for path in fixture.iterdir()} == REQUIRED_TOP_LEVEL
         assert (fixture / "initial_state").is_dir()
-        assert [path.name for path in (fixture / "initial_state").iterdir()] == [".gitkeep"]
-        assert not (fixture / "initial_state" / ".gitkeep").is_symlink()
+        initial_names = [path.name for path in (fixture / "initial_state").iterdir()]
+        if fixture.name == PREPARED_TASK_ID:
+            assert initial_names == ["README.md"]
+            assert not (fixture / "initial_state" / "README.md").is_symlink()
+        else:
+            assert initial_names == [".gitkeep"]
+            assert not (fixture / "initial_state" / ".gitkeep").is_symlink()
 
 
-@pytest.mark.parametrize("task_id", TASK_SLOTS)
-def test_template_loads_with_twelve_fixture_contract_and_remains_unpopulated(task_id):
+@pytest.mark.parametrize("task_id", _template_task_ids())
+def test_remaining_tasks_load_with_twelve_fixture_contract_and_remain_templates(task_id):
     fixture = FIXTURE_ROOT / task_id
     spec = load_fixture(fixture)
     config = spec.task_metadata
@@ -96,7 +109,7 @@ def test_template_loads_with_twelve_fixture_contract_and_remains_unpopulated(tas
         _assert_placeholder_document(text)
 
 
-@pytest.mark.parametrize("task_id", TASK_SLOTS)
+@pytest.mark.parametrize("task_id", _template_task_ids())
 def test_templates_contain_no_obvious_business_data_or_pilot_results(task_id):
     fixture = FIXTURE_ROOT / task_id
     text = _template_text(fixture)
@@ -105,6 +118,51 @@ def test_templates_contain_no_obvious_business_data_or_pilot_results(task_id):
     assert "pilot_summary" not in text.lower()
     assert "benchmark result" not in text.lower()
     assert "real provider" not in text.lower()
+
+
+def test_task_001_is_prepared_as_a_real_read_task_but_blocked_before_pilot():
+    fixture = FIXTURE_ROOT / PREPARED_TASK_ID
+    spec = load_fixture(fixture)
+    config = spec.task_metadata
+
+    assert spec.task_id == PREPARED_TASK_ID
+    assert spec.prompt == "读取 README.md\n"
+    assert config["test_purpose_slot"] == "light/file simple"
+    assert config["frozen_plan_purpose"] == "verify lightweight rule"
+    assert config["difficulty_expected_bucket"] == "low"
+    assert config["baseline_model"] == REAL_PILOT_SENTINEL
+    assert config["budget_limit"] == REAL_PILOT_SENTINEL
+    assert config["pilot_execution_gate"] == "real_provider_and_pricing_required"
+    assert config["fixture"]["reset_before_run"] is True
+    assert config["acceptance"]["mode"] == "manual"
+    assert config["acceptance"]["allowed_paths"] == []
+    assert spec.acceptance_command is None
+    assert spec.allowed_paths == ()
+    assert spec.allowed_paths_explicit is True
+    assert spec.expected_paths == ("README.md",)
+    assert spec.forbidden_paths == ()
+
+    initial_readme = (fixture / "initial_state" / "README.md").read_text(encoding="utf-8")
+    current_readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    assert initial_readme == current_readme
+
+    fixture_text = _template_text(fixture)
+    assert PLACEHOLDER not in fixture_text
+    assert not FABRICATED_RESULT.search(fixture_text)
+    acceptance_text = (fixture / "acceptance.md").read_text(encoding="utf-8")
+    assert "light_rule" in acceptance_text
+    assert "JEV" in acceptance_text
+    assert "model response" in acceptance_text
+
+
+def test_task_001_prompt_hits_low_lightweight_read_rule():
+    result = LightweightRuleEngine().evaluate(
+        RouteRequest(task_id=PREPARED_TASK_ID, prompt="读取 README.md")
+    )
+
+    assert result.matched is True
+    assert result.capability is CapabilityLevel.LOW
+    assert result.rule_id == "simple_file_read"
 
 
 def test_task_010_declares_only_the_reusable_t13_seam():
