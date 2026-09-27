@@ -14,8 +14,9 @@
 - T-09：Router Core（manual / light rule / JEV / policy / provider / fallback / cost 全链串联，终态 result_sink 接口）
 - T-10：JSONL 日志（默认最小安全投影、追加写入、脱敏、成本/fallback/错误码可追踪）
 - T-11：CLI（validate-config / run / pilot 稳定命令边界、退出码、结构化结果文件协议与 T-12 可插拔执行接口）
+- T-12：Benchmark Fixture / Harness（隔离初始状态、baseline/router 双运行、自动/人工验收、路径约束、稳定结果与 acceptance timeout）
 
-当前下一任务：**T-12 Benchmark Fixture / Harness**。
+当前下一任务：**T-13 Failure Injection**。
 
 阶段 1 暂不开发 UI，不接真实 Agent Adapter。
 
