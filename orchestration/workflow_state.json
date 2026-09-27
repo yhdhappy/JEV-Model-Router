@@ -23,8 +23,8 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_CONFIG_FREEZE",
-  "status": "pilot_runner_gate_passed",
+  "current_task": "PILOT_OFFICIAL_EXECUTION_GATE",
+  "status": "pilot_config_frozen",
   "retry_count": 0,
   "stop_reason": null,
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
@@ -64,7 +64,7 @@
       "task_010_fallback"
     ],
     "current_task": null,
-    "execution_gate": "pilot_config_freeze_required",
+    "execution_gate": "official_execution_mode_required",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": false,
     "real_provider_gate": {
@@ -86,6 +86,26 @@
       "source_fixture_unchanged": true,
       "official_pilot": false,
       "credentials_committed": false
+    },
+    "pilot_config_gate": {
+      "status": "passed",
+      "baseline_model": "high_model",
+      "budget_limit_per_real_task": 1.25,
+      "estimated_max_costs": {
+        "low_model": 0.1,
+        "medium_model": 0.25,
+        "high_model": 1.0
+      },
+      "max_extra_runs_per_task": 2,
+      "jev_confidence_threshold": 0.7,
+      "difficulty_boundary_scores": [
+        3,
+        4,
+        7,
+        8
+      ],
+      "official_results_path": "benchmark/results/pilot_runs.jsonl",
+      "decision_outcome": null
     }
   }
 }

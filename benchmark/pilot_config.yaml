@@ -1,0 +1,90 @@
+# Official Pilot configuration frozen before any official 10-task execution.
+# This file is declarative only: loading it never starts a task or authorizes
+# a result write. The official runner needs a separate explicit execution mode.
+schema_version: "0.1"
+
+pilot:
+  total_task_slots: 10
+  real_task_ids:
+    - task_001
+    - task_002
+    - task_003
+    - task_004
+    - task_005
+    - task_006
+    - task_007
+    - task_008
+    - task_009
+  controlled_failure_task_id: task_010_fallback
+  baseline_model: high_model
+  baseline_rationale: "Match the current realistic default development strategy without JEV Router; the conservative frozen baseline is high_model."
+  controlled_failure_mode: controlled_mock_only
+
+budget:
+  # Contract: each attempt gets its own independent budget guard.
+  budget_limit_per_real_task: 1.25
+  contract: per_attempt
+  # Conservative exposure estimates, not claimed actual prices. Provider-
+  # reported cost remains authoritative when available.
+  estimated_max_costs:
+    low_model: 0.10
+    medium_model: 0.25
+    high_model: 1.00
+
+repeat_policy:
+  max_extra_runs_per_task: 2
+  # Empirical Pilot threshold from prior local real-JEV stress evidence; not a universal truth.
+  jev_confidence_threshold: 0.70
+  difficulty_boundary_scores:
+    - 3
+    - 4
+    - 7
+    - 8
+  triggers:
+    - router_selected_model_failed_and_adjacent_stronger_passed
+    - jev_confidence_below
+    - difficulty_score_near_bucket_boundary
+    - human_jev_assessment
+    - unexpected_fallback
+    - result_material_to_go_adjust_stop
+  forbidden_triggers:
+    - result_dislike
+    - ad_hoc_rerun
+
+jev_audit:
+  assessment_enum:
+    - reasonable
+    - questionable
+    - clearly_unreasonable
+    - not_applicable
+  record_when_classifier_available: true
+  audit_after_lightweight_rule: true
+  audit_timing: after_execution
+  audit_cost_field: experimental_validation_cost
+  audit_cost_included_in_production_route_cost: false
+  controlled_failure:
+    assessment: not_applicable
+    reason: controlled_mock
+
+outputs:
+  official_results_path: benchmark/results/pilot_runs.jsonl
+  summary_json_path: benchmark/results/pilot_summary.json
+  summary_markdown_path: benchmark/results/pilot_summary.md
+  artifacts_dir: benchmark/results/artifacts
+
+decision:
+  outcome: null
+  go_criteria:
+    - core stable and controlled fallback passes
+    - no budget runaway
+    - JEV is not often clearly unreasonable
+    - no obvious Router quality degradation
+    - initial cost-benefit signal or cost difference is worth continuing
+  adjust_criteria:
+    - fixable JEV, rule, capability, fallback, or budget-parameter issues
+  stop_criteria:
+    - unstable Router
+    - JEV provides no useful discrimination
+    - routing overhead consumes the savings
+    - obvious quality degradation
+    - heavy human intervention
