@@ -22,9 +22,9 @@
     "model": "opencode-go/deepseek-v4.1-flash",
     "thinking": "medium"
   },
-  "last_completed_task": "T-14",
-  "current_task": "T-15",
-  "status": "ready",
+  "last_completed_task": "T-15",
+  "current_task": null,
+  "status": "stage1_complete",
   "retry_count": 0,
   "stop_reason": null,
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",

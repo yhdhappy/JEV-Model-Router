@@ -133,6 +133,7 @@ class RouteResult(StrictModel):
         "safe_default",
     ]
     rule_id: Optional[str] = None
+    possible_rule_misclassification: bool = False
     classifier: Optional[ClassifierResult] = None
     selected_model: Optional[str] = None
     fallback_history: List[str] = Field(default_factory=list)

@@ -77,6 +77,7 @@ def test_one_result_is_one_jsonl_line_with_required_safe_fields(tmp_path):
         "status": "success",
         "route_source": "jev",
         "rule_id": None,
+        "possible_rule_misclassification": False,
         "classifier": {
             "task_type": "coding",
             "difficulty_score": 7,

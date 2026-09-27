@@ -60,6 +60,12 @@ _ERROR_MESSAGES = {
     "jev_provider_error": "JEV classifier failed",
 }
 
+_CAPABILITY_RANK = {
+    CapabilityLevel.LOW: 0,
+    CapabilityLevel.MEDIUM: 1,
+    CapabilityLevel.HIGH: 2,
+}
+
 
 class Router:
     """Coordinate one complete route and execution attempt."""
@@ -342,6 +348,13 @@ class Router:
                     route_source=route_source,
                     rule_id=rule_id,
                     classifier=exposed_classifier,
+                    possible_rule_misclassification=_possible_rule_misclassification(
+                        self._registry,
+                        route_origin=route_source,
+                        status="failed",
+                        classifier=classifier_for_policy,
+                        selected_model=None,
+                    ),
                     errors=[self._error("no_eligible_model")],
                     cost=calculate_cost_breakdown(
                         classifier_cost=classifier_cost
@@ -356,6 +369,13 @@ class Router:
                     route_source=route_source,
                     rule_id=rule_id,
                     classifier=exposed_classifier,
+                    possible_rule_misclassification=_possible_rule_misclassification(
+                        self._registry,
+                        route_origin=route_source,
+                        status="failed",
+                        classifier=classifier_for_policy,
+                        selected_model=None,
+                    ),
                     errors=[self._error("policy_error")],
                     cost=calculate_cost_breakdown(
                         classifier_cost=classifier_cost
@@ -399,6 +419,13 @@ class Router:
                         route_source=route_source,
                         rule_id=rule_id,
                         classifier=exposed_classifier,
+                        possible_rule_misclassification=_possible_rule_misclassification(
+                            self._registry,
+                            route_origin=route_source,
+                            status="success",
+                            classifier=classifier_for_policy,
+                            selected_model=model,
+                        ),
                         selected_model=model,
                         fallback_history=history,
                         errors=errors,
@@ -417,6 +444,13 @@ class Router:
                     route_source="fallback",
                     rule_id=rule_id,
                     classifier=exposed_classifier,
+                    possible_rule_misclassification=_possible_rule_misclassification(
+                        self._registry,
+                        route_origin=route_source,
+                        status="success",
+                        classifier=classifier_for_policy,
+                        selected_model=model,
+                    ),
                     selected_model=model,
                     fallback_history=history,
                     errors=errors,
@@ -434,6 +468,13 @@ class Router:
                 route_source=route_source,
                 rule_id=rule_id,
                 classifier=exposed_classifier,
+                possible_rule_misclassification=_possible_rule_misclassification(
+                    self._registry,
+                    route_origin=route_source,
+                    status="failed",
+                    classifier=classifier_for_policy,
+                    selected_model=None,
+                ),
                 selected_model=None,
                 fallback_history=history,
                 errors=errors or [self._error("provider_error")],
@@ -578,6 +619,7 @@ class Router:
         status: str,
         route_source: str,
         rule_id: Optional[str] = None,
+        possible_rule_misclassification: bool = False,
         classifier: Optional[ClassifierResult] = None,
         selected_model: Optional[str] = None,
         fallback_history: Optional[Sequence[str]] = None,
@@ -589,6 +631,7 @@ class Router:
             status=status,
             route_source=route_source,
             rule_id=rule_id,
+            possible_rule_misclassification=possible_rule_misclassification,
             classifier=classifier,
             selected_model=selected_model,
             fallback_history=list(fallback_history or ()),
@@ -616,6 +659,29 @@ def _classifier_from_rule(rule: RuleResult) -> ClassifierResult:
         required_capability=rule.capability,
         confidence=rule.confidence,
         risk_level=RiskLevel.LOW,
+    )
+
+
+def _possible_rule_misclassification(
+    registry: ModelRegistry,
+    *,
+    route_origin: str,
+    status: str,
+    classifier: ClassifierResult,
+    selected_model: Optional[str],
+) -> bool:
+    """Mark light-rule routes that fail or require higher capability."""
+
+    if route_origin != "light_rule":
+        return False
+    if status == "failed":
+        return True
+    if selected_model is None:
+        return False
+    selected_definition = registry.get(selected_model)
+    return (
+        _CAPABILITY_RANK[selected_definition.capability]
+        > _CAPABILITY_RANK[classifier.required_capability]
     )
 
 

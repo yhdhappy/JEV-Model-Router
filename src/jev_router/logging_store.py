@@ -85,6 +85,7 @@ def _project(result: RouteResult) -> Dict[str, Any]:
         "status": result.status,
         "route_source": result.route_source,
         "rule_id": result.rule_id,
+        "possible_rule_misclassification": result.possible_rule_misclassification,
         "classifier": classifier_record,
         "selected_model": result.selected_model,
         "jev_called": classifier is not None
