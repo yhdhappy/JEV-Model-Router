@@ -15,8 +15,9 @@
 - T-10：JSONL 日志（默认最小安全投影、追加写入、脱敏、成本/fallback/错误码可追踪）
 - T-11：CLI（validate-config / run / pilot 稳定命令边界、退出码、结构化结果文件协议与 T-12 可插拔执行接口）
 - T-12：Benchmark Fixture / Harness（隔离初始状态、baseline/router 双运行、自动/人工验收、路径约束、稳定结果与 acceptance timeout）
+- T-13：Failure Injection（task_010 可复用受控故障入口；primary→fallback 成功与预算阻断两种 Router 终态自动验证）
 
-当前下一任务：**T-13 Failure Injection**。
+当前下一任务：**T-14 Pilot 模板**。
 
 阶段 1 暂不开发 UI，不接真实 Agent Adapter。
 
