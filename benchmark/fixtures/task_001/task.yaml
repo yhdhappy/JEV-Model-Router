@@ -1,0 +1,12 @@
+# T-14 template only. Replace every FILL_BEFORE_PILOT value before any run.
+id: task_001
+name: "T-14 Pilot template task_001"
+test_purpose_slot: "light/file simple"
+frozen_plan_purpose: "verify lightweight rule"
+difficulty_expected_bucket: FILL_BEFORE_PILOT
+baseline_model: FILL_BEFORE_PILOT
+budget_limit: FILL_BEFORE_PILOT
+fixture:
+  reset_before_run: true
+acceptance:
+  mode: manual

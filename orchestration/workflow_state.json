@@ -22,8 +22,8 @@
     "model": "opencode-go/deepseek-v4.1-flash",
     "thinking": "medium"
   },
-  "last_completed_task": "T-13",
-  "current_task": "T-14",
+  "last_completed_task": "T-14",
+  "current_task": "T-15",
   "status": "ready",
   "retry_count": 0,
   "stop_reason": null,

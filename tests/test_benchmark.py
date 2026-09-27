@@ -404,9 +404,8 @@ def test_run_pair_summary_is_deterministic_for_identical_executors(tmp_path):
     assert first["baseline"]["executor"]["status"] == "completed"
 
 
-def test_runner_has_no_t13_templates_or_network_provider_surface():
+def test_runner_has_no_network_provider_surface():
     project_root = Path(__file__).parents[1]
-    assert not any((project_root / "benchmark" / "fixtures").glob("task_00*"))
     source = (project_root / "benchmark" / "runner.py").read_text(encoding="utf-8")
     assert "requests" not in source
     assert "urllib" not in source

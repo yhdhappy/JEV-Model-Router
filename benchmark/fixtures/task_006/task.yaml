@@ -1,0 +1,12 @@
+# T-14 template only. Replace every FILL_BEFORE_PILOT value before any run.
+id: task_006
+name: "T-14 Pilot template task_006"
+test_purpose_slot: "coding multi-step"
+frozen_plan_purpose: "multi-step implementation"
+difficulty_expected_bucket: FILL_BEFORE_PILOT
+baseline_model: FILL_BEFORE_PILOT
+budget_limit: FILL_BEFORE_PILOT
+fixture:
+  reset_before_run: true
+acceptance:
+  mode: manual

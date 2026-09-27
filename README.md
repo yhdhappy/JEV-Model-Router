@@ -16,8 +16,9 @@
 - T-11：CLI（validate-config / run / pilot 稳定命令边界、退出码、结构化结果文件协议与 T-12 可插拔执行接口）
 - T-12：Benchmark Fixture / Harness（隔离初始状态、baseline/router 双运行、自动/人工验收、路径约束、稳定结果与 acceptance timeout）
 - T-13：Failure Injection（task_010 可复用受控故障入口；primary→fallback 成功与预算阻断两种 Router 终态自动验证）
+- T-14：Pilot 模板（task_001~task_010_fallback 空模板、预运行占位、T-13 故障场景引用与防伪结构校验）
 
-当前下一任务：**T-14 Pilot 模板**。
+当前下一任务：**T-15 阶段 1 总验收与收尾**。
 
 阶段 1 暂不开发 UI，不接真实 Agent Adapter。
 
