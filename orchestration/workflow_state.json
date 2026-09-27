@@ -23,8 +23,8 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_RUNNER_WIRING",
-  "status": "pilot_provider_gate_passed",
+  "current_task": "PILOT_CONFIG_FREEZE",
+  "status": "pilot_runner_gate_passed",
   "retry_count": 0,
   "stop_reason": null,
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
@@ -64,7 +64,7 @@
       "task_010_fallback"
     ],
     "current_task": null,
-    "execution_gate": "pilot_runner_wiring_required",
+    "execution_gate": "pilot_config_freeze_required",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": false,
     "real_provider_gate": {
@@ -74,6 +74,17 @@
       "execution_provider": "opencode_go",
       "real_end_to_end_smoke_passed": true,
       "provider_reported_cost_used": true,
+      "credentials_committed": false
+    },
+    "pilot_runner_gate": {
+      "status": "passed",
+      "gate_smoke_fixture": "task_002",
+      "baseline_acceptance_passed": true,
+      "router_acceptance_passed": true,
+      "jev_called": true,
+      "workspace_isolation_verified": true,
+      "source_fixture_unchanged": true,
+      "official_pilot": false,
       "credentials_committed": false
     }
   }

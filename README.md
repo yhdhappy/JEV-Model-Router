@@ -104,6 +104,23 @@ git diff --check
 - `task_010_fallback` 继续使用 T-13 受控 Mock 故障入口，用来验证 fallback / Budget Guard，不冒充真实 Provider 成功。
 - 在获得真实 Pilot 数据前，不预填结果、分数或 Go / Adjust / Stop 判断。
 
+PILOT_RUNNER_WIRING 已通过：离线接线、两轮真实 task_002 gate smoke、总顾问验收和独立 review 均通过。Baseline / Router 使用独立 workspace 与独立 provider 状态；真实 Router 路径已实际调用 JEV，验收通过，且 gate 结果只写 `pilot_runner_gate_smoke.jsonl`。当前仍保持 `real_pilot_started=false`；下一步是 `PILOT_CONFIG_FREEZE`，冻结正式 Pilot 的 Baseline、预算、重复运行阈值和官方结果写入规则。
+
+阶段一 Policy 中，required_capability 表示可接受模型能力的下限；在满足 task type、enabled 和能力下限的 eligible 模型中，系统仍按当前静态 price proxy 排序。因此，更高能力 tier 如果 proxy 更低，也可能被选中。gate smoke 曾观察到 low file_operation 选择 medium_model；这只是当前路由规则行为，不是官方 Pilot 的成本结论。
+
+仅在明确授权进行一次 gate smoke 时使用以下命令；它需要本机已有的 JEV_API_KEY_FILE，只写 benchmark/results/pilot_runner_gate_smoke.jsonl，不会写官方 pilot_runs.jsonl：
+
+~~~bash
+JEV_API_KEY_FILE=/path/to/jev-key.rtf \
+  .venv/bin/python scripts/real_pilot_gate_smoke.py benchmark/fixtures/task_002 \
+  --baseline-model low_model \
+  --budget-limit 1.00 \
+  --max-cost low_model=0.10 \
+  --max-cost medium_model=0.25 \
+  --max-cost high_model=1.00 \
+  --output benchmark/results/pilot_runner_gate_smoke.jsonl
+~~~
+
 检查 10 个已准备任务的结构与状态：
 
 ```bash
@@ -112,7 +129,7 @@ rg -n 'FILL_BEFORE_REAL_PILOT|controlled_mock_only_not_real_provider' benchmark/
 .venv/bin/python -m pytest -q tests/test_pilot_templates.py
 ```
 
-不要把 `pilot` CLI 的委托命令误当作真实 Pilot 已经执行。真实 Provider / 模型 / 成本 Gate 已通过；当前下一道正式闸门是 `PILOT_RUNNER_WIRING`：把每个 fixture 的隔离 workspace、Router、`auto=True` 执行、验收和结果持久化串成真实 Pilot runner。
+不要把 `pilot` CLI 的委托命令误当作真实 Pilot 已经执行。真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已通过；当前正式闸门是 `PILOT_CONFIG_FREEZE`。配置冻结并通过审查后，才允许创建官方 `benchmark/results/pilot_runs.jsonl` 并运行正式 10-task Pilot。
 
 ## 安全与阶段边界
 
@@ -123,4 +140,4 @@ rg -n 'FILL_BEFORE_REAL_PILOT|controlled_mock_only_not_real_provider' benchmark/
 
 ## 当前交接边界
 
-T-15 与 10 个 Pilot 任务准备均已完成。真实 Provider / 模型 / 成本 Gate 也已通过真实端到端 smoke；真实 Pilot 尚未开始。当前执行闸门是 `PILOT_RUNNER_WIRING`，完成 fixture workspace → Router → OpenCode Go → acceptance → result persistence 接线后，才运行正式 10-task Pilot；在获得真实 Pilot 数据前不作 Go / Adjust / Stop 判断。
+T-15、10 个 Pilot 任务准备、真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已完成。真实 Pilot 尚未开始。当前执行闸门是 `PILOT_CONFIG_FREEZE`；在冻结 Baseline、预算、重复运行阈值和官方结果写入策略并通过审查前，不运行正式 10-task Pilot；在获得真实 Pilot 数据前不作 Go / Adjust / Stop 判断。
