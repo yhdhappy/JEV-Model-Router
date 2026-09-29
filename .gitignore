@@ -10,3 +10,5 @@ build/
 benchmark/results/*.jsonl
 benchmark/results/*.json
 .DS_Store
+
+benchmark/results/artifacts/
