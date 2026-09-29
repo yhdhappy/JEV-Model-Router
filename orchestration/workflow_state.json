@@ -24,9 +24,9 @@
   },
   "last_completed_task": "T-15",
   "current_task": "PILOT_OFFICIAL_EXECUTION",
-  "status": "official_pilot_running",
+  "status": "blocked",
   "retry_count": 0,
-  "stop_reason": null,
+  "stop_reason": "task_003 official preflight blocked: JEV_API_KEY_FILE is unset in both WebCodex and PASEO execution environments",
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
   "workspace_policy": {
     "fixed_project_root": true,
@@ -136,6 +136,8 @@
         "repeat_triggered": false,
         "repeat_triggers": []
       }
-    }
+    },
+    "blocked_at": "task_003_preflight",
+    "blocked_reason": "jev_api_key_file_required"
   }
 }
