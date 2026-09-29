@@ -24,9 +24,9 @@
   },
   "last_completed_task": "T-15",
   "current_task": "PILOT_OFFICIAL_EXECUTION",
-  "status": "official_pilot_running",
+  "status": "blocked",
   "retry_count": 0,
-  "stop_reason": null,
+  "stop_reason": "task_002 official preflight blocked: JEV_API_KEY_FILE is not set in the current WebCodex execution environment",
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
   "workspace_policy": {
     "fixed_project_root": true,
@@ -63,7 +63,7 @@
       "task_009",
       "task_010_fallback"
     ],
-    "current_task": "task_003",
+    "current_task": "task_002",
     "execution_gate": "official_pilot_in_progress",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": true,
@@ -136,6 +136,8 @@
         "repeat_triggered": false,
         "repeat_triggers": []
       }
-    }
+    },
+    "blocked_at": "task_002_preflight",
+    "blocked_reason": "jev_api_key_file_required"
   }
 }
