@@ -152,6 +152,10 @@ rg -n 'FILL_BEFORE_REAL_PILOT|controlled_mock_only_not_real_provider' benchmark/
 
 task_001 已完成官方 first attempt 与人工复核：Baseline=manual_passed；Router=manual_failed（预写标准要求 low-capability model，实际选中 medium_model）；JEV audit=reasonable；未触发冻结 repeat 条件。task_002 已完成：Baseline/Router 自动验收均通过，JEV audit=reasonable，Router 生产成本约低于 Baseline 15%，无 fallback/预算异常/重复触发。当前进入 task_003。
 
+### task_003 repeat 状态
+
+task_003 attempt=1 已完成复核：Baseline=manual_failed（新增测试硬编码错误）；Router artifact=manual_passed，但官方执行 status=failed（medium provider_timeout，high fallback 被 Budget Guard 拦截）；JEV audit=reasonable，confidence=0.48、difficulty_score=4。冻结 repeat 条件已触发，当前进入受控 repeat Gate，不进入 task_004，也不覆盖 attempt=1。
+
 ## 当前交接边界
 
 T-15、10 个 Pilot 任务准备、真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已完成。真实 Pilot 尚未开始。当前 `PILOT_OFFICIAL_EXECUTION_GATE` 及 evidence/manual-review subgate 已通过总顾问与独立审核。下一步为 `task_001` 单任务显式授权与真实执行；在获得真实 Pilot 数据前不作 Go / Adjust / Stop 判断。

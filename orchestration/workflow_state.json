@@ -23,7 +23,7 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_OFFICIAL_EXECUTION",
+  "current_task": "PILOT_REPEAT_GATE",
   "status": "official_pilot_running",
   "retry_count": 0,
   "stop_reason": null,
@@ -64,7 +64,7 @@
       "task_010_fallback"
     ],
     "current_task": "task_003",
-    "execution_gate": "official_pilot_in_progress",
+    "execution_gate": "official_repeat_required",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": true,
     "real_provider_gate": {
@@ -120,8 +120,8 @@
         "task_001",
         "task_002"
       ],
-      "last_reviewed_task": "task_002",
-      "next_task": "task_003",
+      "last_reviewed_task": "task_003",
+      "next_task": "task_003_repeat",
       "task_001": {
         "baseline_acceptance": "manual_passed",
         "router_acceptance": "manual_failed",
@@ -135,6 +135,22 @@
         "jev_assessment": "reasonable",
         "repeat_triggered": false,
         "repeat_triggers": []
+      },
+      "task_003": {
+        "attempt_1": {
+          "baseline_acceptance": "manual_failed",
+          "router_acceptance": "manual_passed",
+          "router_execution_status": "failed",
+          "jev_assessment": "reasonable"
+        },
+        "repeat_triggered": true,
+        "repeat_triggers": [
+          "jev_confidence_below",
+          "difficulty_score_near_bucket_boundary",
+          "unexpected_fallback",
+          "result_material_to_go_adjust_stop"
+        ],
+        "repeat_reason": "attempt_1_router_failed_without_usable_execution_cost_outcome"
       }
     },
     "blocked_at": "task_003_preflight",
