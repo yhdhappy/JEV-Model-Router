@@ -1,5 +1,6 @@
 """Offline tests for the opt-in PILOT_RUNNER_WIRING bridge."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -25,6 +26,24 @@ from jev_router.schemas import ClassifierResult, TaskType
 
 
 FIXTURE = Path(__file__).parents[1] / "benchmark" / "fixtures" / "task_002"
+
+
+def _official_result_snapshot():
+    if not OFFICIAL_RESULT_PATH.exists():
+        return False, b"", None
+    content = OFFICIAL_RESULT_PATH.read_bytes()
+    return True, content, hashlib.sha256(content).hexdigest()
+
+
+def _assert_official_result_unchanged(snapshot):
+    existed, content, digest = snapshot
+    if not existed:
+        assert not OFFICIAL_RESULT_PATH.exists()
+        return
+    assert OFFICIAL_RESULT_PATH.is_file()
+    current = OFFICIAL_RESULT_PATH.read_bytes()
+    assert current == content
+    assert hashlib.sha256(current).hexdigest() == digest
 
 
 class FakeJEV:
@@ -140,6 +159,7 @@ def fake_factories(task_type="coding"):
 
 
 def test_real_pair_uses_runtime_values_without_mutating_fixture_or_running_official_pilot():
+    official_snapshot = _official_result_snapshot()
     fixture_task = (FIXTURE / "task.yaml").read_text(encoding="utf-8")
     jevs, provider_stacks, make_jev, make_provider, provider_calls = fake_factories()
 
@@ -164,7 +184,7 @@ def test_real_pair_uses_runtime_values_without_mutating_fixture_or_running_offic
     assert pair["router"]["workspace_removed"] is True
     assert (FIXTURE / "task.yaml").read_text(encoding="utf-8") == fixture_task
     assert "FILL_BEFORE_REAL_PILOT" in fixture_task
-    assert not OFFICIAL_RESULT_PATH.exists()
+    _assert_official_result_unchanged(official_snapshot)
 
     requests = [request for _name, request in provider_calls]
     assert len(requests) == 2
@@ -348,6 +368,7 @@ def test_jsonl_append_is_one_line_and_rejects_non_finite_values(tmp_path):
 
 
 def test_gate_persistence_rejects_official_result_path(tmp_path):
+    official_snapshot = _official_result_snapshot()
     pair = {
         "official_pilot": False,
         "baseline": {"official_pilot": False, "mode": "baseline"},
@@ -358,7 +379,7 @@ def test_gate_persistence_rejects_official_result_path(tmp_path):
     output = tmp_path / "pilot_runner_gate_smoke.jsonl"
     persist_pair(output, pair)
     assert len(output.read_text(encoding="utf-8").splitlines()) == 2
-    assert not OFFICIAL_RESULT_PATH.exists()
+    _assert_official_result_unchanged(official_snapshot)
 
 
 def test_task_010_is_refused_before_building_real_providers():
@@ -376,6 +397,7 @@ def test_task_010_is_refused_before_building_real_providers():
 def test_gate_smoke_missing_jev_env_refuses_without_creating_official_results(
     monkeypatch, tmp_path, capsys
 ):
+    official_snapshot = _official_result_snapshot()
     monkeypatch.delenv("JEV_API_KEY_FILE", raising=False)
     output = tmp_path / "smoke.jsonl"
     exit_code = gate_smoke_script.main(
@@ -398,7 +420,7 @@ def test_gate_smoke_missing_jev_env_refuses_without_creating_official_results(
     assert exit_code == 2
     assert "jev_api_key_file_required" in capsys.readouterr().out
     assert not output.exists()
-    assert not OFFICIAL_RESULT_PATH.exists()
+    _assert_official_result_unchanged(official_snapshot)
 
 
 @pytest.mark.parametrize("key_file_kind", ["missing", "empty", "directory"])

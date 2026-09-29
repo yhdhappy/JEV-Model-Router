@@ -14,10 +14,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from benchmark.official_pilot import (
     CONFIRMATION_TEXT,
+    JEV_AUDIT_REVIEW_CONFIRMATION_TEXT,
     MANUAL_REVIEW_CONFIRMATION_TEXT,
     OfficialPilotGateError,
     _issue_official_authorization,
     execute_official_task,
+    finalize_jev_audit_assessment,
     finalize_manual_acceptance,
     preflight_official_task,
 )
@@ -31,8 +33,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.review and args.confirm != MANUAL_REVIEW_CONFIRMATION_TEXT:
         print(json.dumps(_refusal("manual_review_confirmation_required"), sort_keys=True, separators=(",", ":")))
         return 2
+    if args.audit_review and args.confirm != JEV_AUDIT_REVIEW_CONFIRMATION_TEXT:
+        print(json.dumps(_refusal("jev_audit_review_confirmation_required"), sort_keys=True, separators=(",", ":")))
+        return 2
     if args.review and (args.baseline is None or args.router is None):
         print(json.dumps(_refusal("manual_verdict_required"), sort_keys=True, separators=(",", ":")))
+        return 2
+    if args.audit_review and args.jev_assessment is None:
+        print(json.dumps(_refusal("jev_assessment_required"), sort_keys=True, separators=(",", ":")))
         return 2
     try:
         if args.review:
@@ -41,6 +49,14 @@ def main(argv: Optional[List[str]] = None) -> int:
                 _issue_official_authorization(),
                 args.baseline == "pass",
                 args.router == "pass",
+            )
+            print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
+            return 0
+        if args.audit_review:
+            summary = finalize_jev_audit_assessment(
+                args.task,
+                _issue_official_authorization(),
+                args.jev_assessment,
             )
             print(json.dumps(summary, sort_keys=True, separators=(",", ":")))
             return 0
@@ -69,9 +85,15 @@ def _parser() -> argparse.ArgumentParser:
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--execute", action="store_true", help="execute after preflight and exact confirmation")
     modes.add_argument("--review", action="store_true", help="finalize advisor manual acceptance verdicts")
+    modes.add_argument("--audit-review", action="store_true", help="finalize one router JEV audit assessment")
     parser.add_argument("--confirm", default=None, help="must equal the exact confirmation text for the selected mode")
     parser.add_argument("--baseline", choices=("pass", "fail"), help="manual baseline verdict")
     parser.add_argument("--router", choices=("pass", "fail"), help="manual router verdict")
+    parser.add_argument(
+        "--jev-assessment",
+        choices=("reasonable", "questionable", "clearly_unreasonable"),
+        help="human assessment for one pending router JEV audit",
+    )
     return parser
 
 

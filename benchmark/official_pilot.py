@@ -51,6 +51,7 @@ DEFAULT_WORKFLOW_STATE_PATH = PROJECT_ROOT / "orchestration" / "workflow_state.j
 DEFAULT_FIXTURE_ROOT = PROJECT_ROOT / "benchmark" / "fixtures"
 CONFIRMATION_TEXT = "OFFICIAL_PILOT_ONE_TASK"
 MANUAL_REVIEW_CONFIRMATION_TEXT = "OFFICIAL_PILOT_MANUAL_REVIEW"
+JEV_AUDIT_REVIEW_CONFIRMATION_TEXT = "OFFICIAL_PILOT_JEV_REVIEW"
 _AUTH_TOKEN = object()
 _PREFLIGHT_TOKEN = object()
 _FORBIDDEN_KEYS = frozenset(
@@ -390,6 +391,101 @@ def finalize_manual_acceptance(
         "task_id": task_id,
         "baseline_acceptance_status": "manual_passed" if baseline_passed else "manual_failed",
         "router_acceptance_status": "manual_passed" if router_passed else "manual_failed",
+    }
+
+
+def finalize_jev_audit_assessment(
+    task_id: str,
+    authorization: _OfficialExecutionAuthorization,
+    assessment: str,
+    *,
+    config_path: Union[str, Path] = DEFAULT_CONFIG_PATH,
+    results_path: Optional[Union[str, Path]] = None,
+    timestamp_utc: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Record the advisor's assessment for one pending router JEV audit."""
+
+    _require_authorization(authorization)
+    _validate_task_id(task_id)
+    if task_id == CONTROLLED_FAILURE_TASK_ID:
+        raise OfficialPilotGateError(
+            "controlled mock JEV audit is not manually reviewable",
+            error_code="jev_audit_review_not_pending",
+        )
+    try:
+        config = load_pilot_config(config_path, model_registry_path=DEFAULT_MODEL_REGISTRY_PATH)
+    except Exception as exc:
+        raise OfficialPilotGateError("pilot config is not loadable", error_code="pilot_config_unloadable") from exc
+    allowed_assessments = set(config.audit_assessments) - {"not_applicable"}
+    if not isinstance(assessment, str) or assessment not in allowed_assessments:
+        raise OfficialPilotGateError(
+            "JEV audit assessment is not an allowed human-review value",
+            error_code="audit_assessment_invalid",
+        )
+
+    outputs = _validate_output_paths(config)
+    official_results_path = outputs["official_results_path"]
+    if results_path is not None and _resolve_path(results_path) != official_results_path:
+        raise OfficialPilotGateError("results path does not match frozen config", error_code="results_path_mismatch")
+    records = list(_read_official_records(official_results_path))
+    matches = [record for record in records if record.get("task_id") == task_id]
+    if len(matches) != 2 or {record.get("mode") for record in matches} != {"baseline", "router"}:
+        raise OfficialPilotGateError("JEV audit review requires exactly one official pair", error_code="jev_audit_pair_invalid")
+    if any(record.get("attempt") != 1 for record in matches):
+        raise OfficialPilotGateError("JEV audit review requires attempt 1", error_code="jev_audit_pair_invalid")
+
+    baseline = next(record for record in matches if record.get("mode") == "baseline")
+    router = next(record for record in matches if record.get("mode") == "router")
+    baseline_audit = baseline.get("jev_audit")
+    if (
+        not isinstance(baseline_audit, Mapping)
+        or baseline_audit.get("status") != "not_applicable"
+        or baseline_audit.get("assessment_status") != "not_applicable"
+    ):
+        raise OfficialPilotGateError(
+            "baseline JEV audit is not frozen as not_applicable",
+            error_code="jev_audit_review_not_pending",
+        )
+    router_audit = router.get("jev_audit")
+    if (
+        not isinstance(router_audit, Mapping)
+        or router_audit.get("status") != "pending_human_review"
+        or router_audit.get("assessment_status") != "pending_human_review"
+        or router_audit.get("classifier") is None
+    ):
+        raise OfficialPilotGateError(
+            "router JEV audit is not pending human review",
+            error_code="jev_audit_review_not_pending",
+        )
+
+    reviewed_at = timestamp_utc or _utc_now()
+    updated = []
+    for record in records:
+        value = dict(record)
+        if record.get("task_id") == task_id and record.get("mode") == "router":
+            audit = dict(router_audit)
+            audit.update(
+                {
+                    "assessment": assessment,
+                    "assessment_status": "reviewed",
+                    "human_review": {
+                        "reviewer": "advisor",
+                        "timestamp_utc": reviewed_at,
+                    },
+                }
+            )
+            value["jev_audit"] = audit
+            _reject_unsafe_record(value)
+        updated.append(value)
+    _atomic_replace_official_jsonl(
+        official_results_path,
+        b"".join(_serialize_official_record(record) for record in updated),
+    )
+    return {
+        "official_pilot": True,
+        "status": "jev_audit_review_finalized",
+        "task_id": task_id,
+        "assessment": assessment,
     }
 
 
@@ -1045,6 +1141,13 @@ def _next_allowed_task(records: Sequence[Mapping[str, Any]], config: PilotConfig
     ordered = (*config.real_task_ids, config.controlled_failure_task_id)
     for task in ordered:
         task_records = [record for record in records if record.get("task_id") == task]
+        if task in config.real_task_ids and _task_has_complete_pair(records, task):
+            router_records = [record for record in task_records if record.get("mode") == "router"]
+            if router_records and _router_jev_audit_is_pending(router_records[0]):
+                raise OfficialPilotGateError(
+                    "JEV audit review is pending",
+                    error_code="jev_audit_pending",
+                )
         if (
             _task_has_complete_pair(records, task)
             and any(record.get("acceptance_status") == "pending_manual" for record in task_records)
@@ -1067,6 +1170,11 @@ def _next_allowed_task(records: Sequence[Mapping[str, Any]], config: PilotConfig
 def _task_has_complete_pair(records: Sequence[Mapping[str, Any]], task_id: str) -> bool:
     modes = {record.get("mode") for record in records if record.get("task_id") == task_id}
     return modes == {"baseline", "router"}
+
+
+def _router_jev_audit_is_pending(record: Mapping[str, Any]) -> bool:
+    audit = record.get("jev_audit")
+    return isinstance(audit, Mapping) and audit.get("assessment_status") == "pending_human_review"
 
 
 def _validate_workflow_state(path: Union[str, Path]) -> str:
@@ -1204,10 +1312,12 @@ def _utc_now() -> str:
 
 __all__ = [
     "CONFIRMATION_TEXT",
+    "JEV_AUDIT_REVIEW_CONFIRMATION_TEXT",
     "MANUAL_REVIEW_CONFIRMATION_TEXT",
     "OfficialPilotGateError",
     "OfficialPreflight",
     "execute_official_task",
+    "finalize_jev_audit_assessment",
     "finalize_manual_acceptance",
     "persist_official_pair",
     "preflight_official_task",

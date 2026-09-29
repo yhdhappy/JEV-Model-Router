@@ -349,7 +349,7 @@ def test_manual_pending_blocks_next_task_and_finalization_unlocks_phase_b(monkey
     preflight, result = _execute_fake_task1(monkeypatch, tmp_path)
     assert result["records_written"] == 2
     pending = [json.loads(line) for line in preflight.results_path.read_text(encoding="utf-8").splitlines()]
-    with pytest.raises(official.OfficialPilotGateError, match="manual_acceptance_pending"):
+    with pytest.raises(official.OfficialPilotGateError, match="jev_audit_pending"):
         _preflight(monkeypatch, tmp_path, "task_002", phase="B")
 
     baseline_manifest = tmp_path / pending[0]["evidence_artifact"] / "manifest.json"
@@ -373,7 +373,169 @@ def test_manual_pending_blocks_next_task_and_finalization_unlocks_phase_b(monkey
     statuses = {record["mode"]: record["acceptance_status"] for record in records}
     assert statuses == {"baseline": "manual_passed", "router": "manual_failed"}
     assert all(record["manual_review"]["reviewer"] == "advisor" for record in records)
+    with pytest.raises(official.OfficialPilotGateError, match="jev_audit_pending"):
+        _preflight(monkeypatch, tmp_path, "task_002", phase="B")
+    official.finalize_jev_audit_assessment(
+        "task_001",
+        official._issue_official_authorization(),
+        "reasonable",
+        results_path=preflight.results_path,
+    )
     assert _preflight(monkeypatch, tmp_path, "task_002", phase="B").next_task_id == "task_002"
+
+
+def test_jev_audit_review_updates_only_router_audit(monkeypatch, tmp_path):
+    preflight, _result = _execute_fake_task1(monkeypatch, tmp_path)
+    before = [json.loads(line) for line in preflight.results_path.read_text(encoding="utf-8").splitlines()]
+    before_by_mode = {record["mode"]: record for record in before}
+
+    final = official.finalize_jev_audit_assessment(
+        "task_001",
+        official._issue_official_authorization(),
+        "reasonable",
+        config_path=ROOT / "benchmark" / "pilot_config.yaml",
+        results_path=preflight.results_path,
+        timestamp_utc="2026-09-30T02:00:00Z",
+    )
+
+    assert final == {
+        "official_pilot": True,
+        "status": "jev_audit_review_finalized",
+        "task_id": "task_001",
+        "assessment": "reasonable",
+    }
+    after = [json.loads(line) for line in preflight.results_path.read_text(encoding="utf-8").splitlines()]
+    after_by_mode = {record["mode"]: record for record in after}
+    assert after_by_mode["baseline"] == before_by_mode["baseline"]
+    assert {
+        key: value
+        for key, value in after_by_mode["router"].items()
+        if key != "jev_audit"
+    } == {
+        key: value
+        for key, value in before_by_mode["router"].items()
+        if key != "jev_audit"
+    }
+    expected_audit = dict(before_by_mode["router"]["jev_audit"])
+    expected_audit.update(
+        {
+            "assessment": "reasonable",
+            "assessment_status": "reviewed",
+            "human_review": {
+                "reviewer": "advisor",
+                "timestamp_utc": "2026-09-30T02:00:00Z",
+            },
+        }
+    )
+    assert after_by_mode["router"]["jev_audit"] == expected_audit
+
+
+@pytest.mark.parametrize("assessment", ["not_applicable", "bogus"])
+def test_jev_audit_review_rejects_invalid_assessment(monkeypatch, tmp_path, assessment):
+    preflight, _result = _execute_fake_task1(monkeypatch, tmp_path)
+    before = preflight.results_path.read_bytes()
+    with pytest.raises(official.OfficialPilotGateError, match="audit_assessment_invalid"):
+        official.finalize_jev_audit_assessment(
+            "task_001",
+            official._issue_official_authorization(),
+            assessment,
+            results_path=preflight.results_path,
+        )
+    assert preflight.results_path.read_bytes() == before
+
+
+def test_jev_audit_review_rejects_missing_classifier_and_double_review(monkeypatch, tmp_path):
+    preflight, _result = _execute_fake_task1(monkeypatch, tmp_path)
+    records = [json.loads(line) for line in preflight.results_path.read_text(encoding="utf-8").splitlines()]
+    router = next(record for record in records if record["mode"] == "router")
+    router["jev_audit"]["classifier"] = None
+    preflight.results_path.write_text(
+        "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
+        encoding="utf-8",
+    )
+    with pytest.raises(official.OfficialPilotGateError, match="jev_audit_review_not_pending"):
+        official.finalize_jev_audit_assessment(
+            "task_001",
+            official._issue_official_authorization(),
+            "reasonable",
+            results_path=preflight.results_path,
+        )
+
+    preflight, _result = _execute_fake_task1(monkeypatch, tmp_path / "double")
+    official.finalize_jev_audit_assessment(
+        "task_001",
+        official._issue_official_authorization(),
+        "questionable",
+        results_path=preflight.results_path,
+    )
+    before = preflight.results_path.read_bytes()
+    with pytest.raises(official.OfficialPilotGateError, match="jev_audit_review_not_pending"):
+        official.finalize_jev_audit_assessment(
+            "task_001",
+            official._issue_official_authorization(),
+            "reasonable",
+            results_path=preflight.results_path,
+        )
+    assert preflight.results_path.read_bytes() == before
+
+
+def test_pending_jev_audit_blocks_next_task_until_reviewed(monkeypatch, tmp_path):
+    pending_pair = [
+        dict(
+            _record("task_001", mode),
+            acceptance_status="passed",
+            jev_audit={
+                "status": "pending_human_review",
+                "assessment_status": "pending_human_review",
+                "classifier": {"difficulty_score": 1},
+            },
+        )
+        for mode in ("baseline", "router")
+    ]
+    pending_pair[0]["jev_audit"] = {
+        "status": "not_applicable",
+        "assessment_status": "not_applicable",
+        "assessment": None,
+    }
+    with pytest.raises(official.OfficialPilotGateError, match="jev_audit_pending"):
+        _preflight(monkeypatch, tmp_path, "task_002", pending_pair, phase="B")
+
+    reviewed_pair = [dict(record) for record in pending_pair]
+    reviewed_pair[1]["jev_audit"] = {
+        "status": "reviewed",
+        "assessment_status": "reviewed",
+        "assessment": "reasonable",
+        "classifier": {"difficulty_score": 1},
+    }
+    assert _preflight(monkeypatch, tmp_path / "reviewed", "task_002", reviewed_pair, phase="B").next_task_id == "task_002"
+
+
+def test_audit_review_cli_requires_exact_confirmation_and_assessment(monkeypatch, capsys):
+    assert official_script.main(["--task", "task_001", "--audit-review"]) == 2
+    assert json.loads(capsys.readouterr().out)["error_codes"] == ["jev_audit_review_confirmation_required"]
+
+    assert official_script.main([
+        "--task", "task_001",
+        "--audit-review",
+        "--confirm", "OFFICIAL_PILOT_JEV_REVIEW",
+    ]) == 2
+    assert json.loads(capsys.readouterr().out)["error_codes"] == ["jev_assessment_required"]
+
+    calls = []
+    monkeypatch.setattr(official_script, "_issue_official_authorization", lambda: "auth")
+    monkeypatch.setattr(
+        official_script,
+        "finalize_jev_audit_assessment",
+        lambda task, authorization, assessment: calls.append((task, authorization, assessment)) or {"ok": True},
+    )
+    assert official_script.main([
+        "--task", "task_001",
+        "--audit-review",
+        "--confirm", "OFFICIAL_PILOT_JEV_REVIEW",
+        "--jev-assessment", "reasonable",
+    ]) == 0
+    assert calls == [("task_001", "auth", "reasonable")]
+    assert json.loads(capsys.readouterr().out) == {"ok": True}
 
 
 def test_automated_pair_does_not_require_manual_finalize(monkeypatch, tmp_path):

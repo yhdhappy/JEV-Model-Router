@@ -112,6 +112,8 @@ PILOT_RUNNER_WIRING 已通过：离线接线、两轮真实 task_002 gate smoke�
 
 每个有 classifier 结果的 slot 都记录 JEV 合理性；Lightweight Rule 跳过生产 JEV 时，执行后对同一输入做一次 audit-only 分类，其费用记为 `experimental_validation_cost`，不并入生产 route cost。`task_010_fallback` 的 JEV 审计记录为 `not_applicable` / `controlled_mock`。官方输出固定为 `benchmark/results/pilot_runs.jsonl`、`pilot_summary.json`、`pilot_summary.md` 和 `artifacts/`；配置加载本身不会执行任务或授权写入，官方 runner 必须另行使用显式 official-execution mode/state gate。
 
+官方 Pilot 的任务推进同时要求前一任务完成 acceptance resolution 和 router JEV audit human review；任一项仍待处理，下一任务都会被阻塞。
+
 Go / Adjust / Stop 只作为冻结 criteria 保存，当前 `outcome=null`，没有预填结论。fixture 中的 `FILL_BEFORE_REAL_PILOT` 占位符保持不变，由 runtime config 覆盖。PILOT_CONFIG_FREEZE 已经总顾问与独立审核通过；当前状态仍是 `real_pilot_started=false`。`PILOT_OFFICIAL_EXECUTION_GATE` 及 evidence/manual-review subgate 已经总顾问与独立审核通过；真实 Pilot 仍未开始。下一步是对 `task_001` 进行单任务显式授权后执行，执行前继续保持 `real_pilot_started=false`。
 
 阶段一 Policy 中，required_capability 表示可接受模型能力的下限；在满足 task type、enabled 和能力下限的 eligible 模型中，系统仍按当前静态 price proxy 排序。因此，更高能力 tier 如果 proxy 更低，也可能被选中。gate smoke 曾观察到 low file_operation 选择 medium_model；这只是当前路由规则行为，不是官方 Pilot 的成本结论。
