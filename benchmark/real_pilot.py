@@ -9,14 +9,17 @@ It does not modify fixture files or replace their frozen placeholders.
 from __future__ import annotations
 
 import json
+import hashlib
 import math
 import os
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Union
 
 from jev_router.opencode_go import OpenCodeGoProvider
+from jev_router.providers import ModelResponse
 from jev_router.real_jev import RealJEVClassifier
 from jev_router.registry import ModelDefinition, ModelRegistry
 from jev_router.router import Router
@@ -31,6 +34,10 @@ OFFICIAL_RESULT_PATH = PROJECT_ROOT / "benchmark" / "results" / "pilot_runs.json
 DEFAULT_GATE_SMOKE_RESULT_PATH = (
     PROJECT_ROOT / "benchmark" / "results" / "pilot_runner_gate_smoke.jsonl"
 )
+_OFFICIAL_APPEND_TOKEN = object()
+MAX_EVIDENCE_RESPONSE_BYTES = 256 * 1024
+MAX_EVIDENCE_FILE_BYTES = 256 * 1024
+MAX_EVIDENCE_TOTAL_BYTES = 1024 * 1024
 
 
 class RealPilotConfigurationError(ValueError):
@@ -111,6 +118,34 @@ class _ExecutionCapture:
     route_result: Optional[RouteResult] = None
     classifier_metrics: Optional[Mapping[str, Any]] = None
     provider_metrics: Optional[Dict[str, Mapping[str, Any]]] = None
+    provider_response_text: Optional[Dict[str, str]] = None
+    response_text: Optional[str] = None
+    allowed_path_state: Optional[Dict[str, Dict[str, Any]]] = None
+    evidence_error: Optional[str] = None
+
+
+class _EvidenceProvider:
+    """Delegate provider behavior while retaining only normalized response text."""
+
+    def __init__(self, provider: Any, model_name: str, capture: _ExecutionCapture) -> None:
+        self._provider = provider
+        self._model_name = model_name
+        self._capture = capture
+
+    @property
+    def last_call_metrics(self) -> Any:
+        return getattr(self._provider, "last_call_metrics", None)
+
+    def invoke(self, request: Any) -> Any:
+        response = self._provider.invoke(request)
+        if isinstance(response, ModelResponse) and isinstance(response.text, str):
+            if len(response.text.encode("utf-8")) <= MAX_EVIDENCE_RESPONSE_BYTES:
+                if self._capture.provider_response_text is None:
+                    self._capture.provider_response_text = {}
+                self._capture.provider_response_text[self._model_name] = response.text
+            else:
+                self._capture.evidence_error = "response_evidence_too_large"
+        return response
 
 
 def build_real_router(
@@ -118,6 +153,7 @@ def build_real_router(
     *,
     jev_factory: Optional[Callable[[], Any]] = None,
     provider_factory: Optional[Callable[[str, ModelDefinition], Any]] = None,
+    _evidence_capture: Optional[_ExecutionCapture] = None,
 ) -> Tuple[Router, Any, Mapping[str, Any]]:
     """Build the real Pilot Router from the dedicated non-secret registry.
 
@@ -152,10 +188,15 @@ def build_real_router(
             raise RealPilotConfigurationError(
                 "real-pilot registry contains a non-OpenCode provider"
             )
-        providers[name] = (
+        provider = (
             provider_factory(name, definition)
             if provider_factory is not None
             else OpenCodeGoProvider()
+        )
+        providers[name] = (
+            _EvidenceProvider(provider, name, _evidence_capture)
+            if _evidence_capture is not None
+            else provider
         )
 
     jev = jev_factory() if jev_factory is not None else RealJEVClassifier()
@@ -192,13 +233,14 @@ def run_real_pilot_pair(
     if spec.task_id == "task_010_fallback":
         raise ControlledMockFixtureError()
 
+    baseline_capture = _ExecutionCapture(mode="baseline", provider_metrics={}, provider_response_text={})
+    router_capture = _ExecutionCapture(mode="router", provider_metrics={}, provider_response_text={})
     baseline_router, baseline_jev, baseline_providers = build_real_router(
         runtime,
         jev_factory=_BaselineJEVSentinel,
         provider_factory=provider_factory,
+        _evidence_capture=baseline_capture,
     )
-    baseline_capture = _ExecutionCapture(mode="baseline", provider_metrics={})
-    router_capture = _ExecutionCapture(mode="router", provider_metrics={})
 
     baseline_run = run_fixture(
         spec.path,
@@ -211,11 +253,13 @@ def run_real_pilot_pair(
             baseline_jev,
             baseline_providers,
         ),
+        post_run_hook=_make_post_run_hook(baseline_capture),
     )
     router_router, router_jev, router_providers = build_real_router(
         runtime,
         jev_factory=jev_factory,
         provider_factory=provider_factory,
+        _evidence_capture=router_capture,
     )
     router_run = run_fixture(
         spec.path,
@@ -228,12 +272,17 @@ def run_real_pilot_pair(
             router_jev,
             router_providers,
         ),
+        post_run_hook=_make_post_run_hook(router_capture),
     )
     return {
         "official_pilot": False,
         "task_id": spec.task_id,
         "baseline": _safe_record(baseline_run, baseline_capture),
         "router": _safe_record(router_run, router_capture),
+        "_evidence": {
+            "baseline": _evidence_record(baseline_capture),
+            "router": _evidence_record(router_capture),
+        },
     }
 
 
@@ -259,10 +308,15 @@ def append_jsonl(
     record: Mapping[str, Any],
     *,
     allow_official: bool = False,
+    _official_token: Any = None,
 ) -> None:
     """Append one UTF-8 JSON object as one line, rejecting non-finite values."""
 
     target = Path(path)
+    if allow_official and _official_token is not _OFFICIAL_APPEND_TOKEN:
+        raise RealPilotConfigurationError(
+            "official pilot result writes require the internal authorization path"
+        )
     if _same_path(target, OFFICIAL_RESULT_PATH) and not allow_official:
         raise RealPilotConfigurationError(
             "official pilot result path requires explicit allow_official=True"
@@ -324,6 +378,8 @@ def _make_executor(
         )
         result = router.route(request)
         capture.route_result = result
+        if result.selected_model and capture.provider_response_text:
+            capture.response_text = capture.provider_response_text.get(result.selected_model)
         capture.classifier_metrics = _last_metrics(jev)
         capture.provider_metrics = {
             name: metrics
@@ -333,6 +389,111 @@ def _make_executor(
         return {"status": result.status}
 
     return execute
+
+
+def _make_post_run_hook(
+    capture: _ExecutionCapture,
+) -> Callable[[Path, Any], None]:
+    def capture_final_state(workspace: Path, spec: Any) -> None:
+        try:
+            capture.allowed_path_state = _capture_allowed_path_state(
+                workspace, spec.allowed_paths
+            )
+        except (OSError, UnicodeError, ValueError, RealPilotConfigurationError) as exc:
+            capture.evidence_error = str(exc).split(":", 1)[0]
+
+    return capture_final_state
+
+
+def _evidence_record(capture: _ExecutionCapture) -> Dict[str, Any]:
+    return {
+        "response_text": capture.response_text or "",
+        "allowed_paths": capture.allowed_path_state or {},
+        "error": capture.evidence_error,
+    }
+
+
+def _capture_allowed_path_state(
+    workspace: Path,
+    allowed_paths: Sequence[str],
+) -> Dict[str, Dict[str, Any]]:
+    root = workspace.resolve(strict=True)
+    state: Dict[str, Dict[str, Any]] = {}
+    total_bytes = 0
+    for raw_allowed in allowed_paths:
+        allowed = _validate_relative_evidence_path(raw_allowed)
+        target = _safe_evidence_path(root, allowed)
+        if not target.exists():
+            state[allowed] = {"status": "absent"}
+            continue
+        _reject_symlink_components(root, target)
+        if target.is_symlink():
+            raise RealPilotConfigurationError("evidence symlink is not allowed")
+        if target.is_file():
+            item, size = _capture_text_file(target)
+            state[allowed] = item
+            total_bytes += size
+        elif target.is_dir():
+            found = False
+            for current, directories, files in os.walk(target, followlinks=False):
+                current_path = Path(current)
+                for name in directories + files:
+                    if (current_path / name).is_symlink():
+                        raise RealPilotConfigurationError("evidence symlink is not allowed")
+                for name in files:
+                    found = True
+                    item_path = current_path / name
+                    relative = item_path.relative_to(root).as_posix()
+                    item, size = _capture_text_file(item_path)
+                    state[relative] = item
+                    total_bytes += size
+            if not found:
+                state[allowed] = {"status": "present", "kind": "directory"}
+        else:
+            raise RealPilotConfigurationError("evidence path is not a regular file or directory")
+        if total_bytes > MAX_EVIDENCE_TOTAL_BYTES:
+            raise RealPilotConfigurationError("evidence_files_too_large")
+    return state
+
+
+def _capture_text_file(path: Path) -> Tuple[Dict[str, Any], int]:
+    with path.open("rb") as stream:
+        data = stream.read(MAX_EVIDENCE_FILE_BYTES + 1)
+    if len(data) > MAX_EVIDENCE_FILE_BYTES:
+        raise RealPilotConfigurationError("evidence_file_too_large")
+    text = data.decode("utf-8")
+    return {
+        "status": "present",
+        "kind": "file",
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "text": text,
+    }, len(data)
+
+
+def _validate_relative_evidence_path(value: str) -> str:
+    if not isinstance(value, str) or not value or "\\" in value:
+        raise RealPilotConfigurationError("evidence path is not a safe relative path")
+    pure = PurePosixPath(value)
+    if pure.is_absolute() or ".." in pure.parts:
+        raise RealPilotConfigurationError("evidence path is not a safe relative path")
+    return pure.as_posix()
+
+
+def _safe_evidence_path(root: Path, relative: str) -> Path:
+    candidate = (root / relative).resolve(strict=False)
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise RealPilotConfigurationError("evidence path escapes workspace") from exc
+    return candidate
+
+
+def _reject_symlink_components(root: Path, path: Path) -> None:
+    current = root
+    for component in path.relative_to(root).parts:
+        current = current / component
+        if current.is_symlink():
+            raise RealPilotConfigurationError("evidence symlink is not allowed")
 
 
 def _safe_record(

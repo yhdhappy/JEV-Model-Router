@@ -197,7 +197,11 @@ def test_sanitized_records_exclude_prompt_context_key_and_raw_provider_output():
         jev_factory=make_jev,
         provider_factory=make_provider,
     )
-    encoded = json.dumps(pair, ensure_ascii=False, sort_keys=True)
+    encoded = json.dumps(
+        {"baseline": pair["baseline"], "router": pair["router"]},
+        ensure_ascii=False,
+        sort_keys=True,
+    )
     for secret in (
         "must not persist",
         "raw provider text must not persist",
@@ -228,6 +232,22 @@ def test_sanitized_records_exclude_prompt_context_key_and_raw_provider_output():
         == 0.01
     )
     assert jevs[0].last_call_metrics["prompt"] == "must not persist"
+
+
+def test_real_pair_keeps_private_normalized_evidence_separate_from_safe_records():
+    jevs, _provider_stacks, make_jev, make_provider, _calls = fake_factories()
+    pair = run_real_pilot_pair(
+        FIXTURE,
+        runtime(),
+        jev_factory=make_jev,
+        provider_factory=make_provider,
+    )
+
+    assert pair["_evidence"]["baseline"]["response_text"] == "raw provider text must not persist"
+    assert pair["_evidence"]["router"]["response_text"] == "raw provider text must not persist"
+    assert pair["_evidence"]["baseline"]["allowed_paths"]["README.md"]["status"] == "present"
+    assert "raw_stdout" not in json.dumps(pair["_evidence"], ensure_ascii=False)
+    assert "prompt" not in json.dumps(pair["_evidence"], ensure_ascii=False)
 
 
 def test_real_pilot_file_operation_classifier_selects_low_model():

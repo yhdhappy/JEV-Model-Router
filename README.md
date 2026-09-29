@@ -112,7 +112,7 @@ PILOT_RUNNER_WIRING 已通过：离线接线、两轮真实 task_002 gate smoke�
 
 每个有 classifier 结果的 slot 都记录 JEV 合理性；Lightweight Rule 跳过生产 JEV 时，执行后对同一输入做一次 audit-only 分类，其费用记为 `experimental_validation_cost`，不并入生产 route cost。`task_010_fallback` 的 JEV 审计记录为 `not_applicable` / `controlled_mock`。官方输出固定为 `benchmark/results/pilot_runs.jsonl`、`pilot_summary.json`、`pilot_summary.md` 和 `artifacts/`；配置加载本身不会执行任务或授权写入，官方 runner 必须另行使用显式 official-execution mode/state gate。
 
-Go / Adjust / Stop 只作为冻结 criteria 保存，当前 `outcome=null`，没有预填结论。fixture 中的 `FILL_BEFORE_REAL_PILOT` 占位符保持不变，由 runtime config 覆盖。PILOT_CONFIG_FREEZE 已经总顾问与独立审核通过；当前状态仍是 `real_pilot_started=false`，下一道 Gate 是 `PILOT_OFFICIAL_EXECUTION_GATE`，必须先实现显式 official-execution 授权与官方结果写入保护，之后才允许从 task_001 开始正式 Pilot。
+Go / Adjust / Stop 只作为冻结 criteria 保存，当前 `outcome=null`，没有预填结论。fixture 中的 `FILL_BEFORE_REAL_PILOT` 占位符保持不变，由 runtime config 覆盖。PILOT_CONFIG_FREEZE 已经总顾问与独立审核通过；当前状态仍是 `real_pilot_started=false`。`PILOT_OFFICIAL_EXECUTION_GATE` 及 evidence/manual-review subgate 已经总顾问与独立审核通过；真实 Pilot 仍未开始。下一步是对 `task_001` 进行单任务显式授权后执行，执行前继续保持 `real_pilot_started=false`。
 
 阶段一 Policy 中，required_capability 表示可接受模型能力的下限；在满足 task type、enabled 和能力下限的 eligible 模型中，系统仍按当前静态 price proxy 排序。因此，更高能力 tier 如果 proxy 更低，也可能被选中。gate smoke 曾观察到 low file_operation 选择 medium_model；这只是当前路由规则行为，不是官方 Pilot 的成本结论。
 
@@ -137,7 +137,7 @@ rg -n 'FILL_BEFORE_REAL_PILOT|controlled_mock_only_not_real_provider' benchmark/
 .venv/bin/python -m pytest -q tests/test_pilot_templates.py
 ```
 
-不要把 `pilot` CLI 的委托命令误当作真实 Pilot 已经执行。真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已通过；当前正式闸门是 `PILOT_CONFIG_FREEZE`。配置冻结并通过审查后，才允许创建官方 `benchmark/results/pilot_runs.jsonl` 并运行正式 10-task Pilot。
+不要把 `pilot` CLI 的委托命令误当作真实 Pilot 已经执行。真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已通过；官方执行闸门已经总顾问与独立审核通过。配置冻结与 review 已满足；仍需每次单任务显式授权后，才允许创建或继续写入官方 `benchmark/results/pilot_runs.jsonl`。
 
 ## 安全与阶段边界
 
@@ -148,4 +148,4 @@ rg -n 'FILL_BEFORE_REAL_PILOT|controlled_mock_only_not_real_provider' benchmark/
 
 ## 当前交接边界
 
-T-15、10 个 Pilot 任务准备、真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已完成。真实 Pilot 尚未开始。当前执行闸门是 `PILOT_CONFIG_FREEZE`；在冻结 Baseline、预算、重复运行阈值和官方结果写入策略并通过审查前，不运行正式 10-task Pilot；在获得真实 Pilot 数据前不作 Go / Adjust / Stop 判断。
+T-15、10 个 Pilot 任务准备、真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已完成。真实 Pilot 尚未开始。当前 `PILOT_OFFICIAL_EXECUTION_GATE` 及 evidence/manual-review subgate 已通过总顾问与独立审核。下一步为 `task_001` 单任务显式授权与真实执行；在获得真实 Pilot 数据前不作 Go / Adjust / Stop 判断。

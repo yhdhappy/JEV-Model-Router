@@ -147,6 +147,7 @@ def run_fixture(
     baseline_executor: Optional[Callable[[Path, Mapping[str, Any], str], Any]] = None,
     router_executor: Optional[Callable[[Path, Mapping[str, Any], str], Any]] = None,
     command_runner: Optional[Callable[..., Any]] = None,
+    post_run_hook: Optional[Callable[[Path, FixtureSpec], Any]] = None,
 ) -> Dict[str, Any]:
     """Run one fixture in a fresh temporary workspace.
 
@@ -206,6 +207,14 @@ def run_fixture(
                         run_status = "failed"
                 else:
                     acceptance = _not_run_acceptance(spec)
+                if post_run_hook is not None:
+                    try:
+                        post_run_hook(workspace_path, spec)
+                    except Exception:
+                        errors.append(
+                            {"code": "post_run_hook_failed", "message": "Post-run hook failed"}
+                        )
+                        run_status = "failed"
     except (OSError, shutil.Error):
         errors.append(
             {"code": "workspace_setup_failed", "message": "Workspace setup failed"}
