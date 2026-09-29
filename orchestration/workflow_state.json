@@ -63,7 +63,7 @@
       "task_009",
       "task_010_fallback"
     ],
-    "current_task": "task_002",
+    "current_task": "task_003",
     "execution_gate": "official_pilot_in_progress",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": true,
@@ -117,13 +117,21 @@
     },
     "official_pilot_progress": {
       "completed_first_attempt_tasks": [
-        "task_001"
+        "task_001",
+        "task_002"
       ],
-      "last_reviewed_task": "task_001",
-      "next_task": "task_002",
+      "last_reviewed_task": "task_002",
+      "next_task": "task_003",
       "task_001": {
         "baseline_acceptance": "manual_passed",
         "router_acceptance": "manual_failed",
+        "jev_assessment": "reasonable",
+        "repeat_triggered": false,
+        "repeat_triggers": []
+      },
+      "task_002": {
+        "baseline_acceptance": "passed",
+        "router_acceptance": "passed",
         "jev_assessment": "reasonable",
         "repeat_triggered": false,
         "repeat_triggers": []

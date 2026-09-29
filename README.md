@@ -150,7 +150,7 @@ rg -n 'FILL_BEFORE_REAL_PILOT|controlled_mock_only_not_real_provider' benchmark/
 
 ### 官方 Pilot 当前进度
 
-task_001 已完成官方 first attempt 与人工复核：Baseline=manual_passed；Router=manual_failed（预写标准要求 low-capability model，实际选中 medium_model）；JEV audit=reasonable；未触发冻结 repeat 条件。当前进入 task_002。
+task_001 已完成官方 first attempt 与人工复核：Baseline=manual_passed；Router=manual_failed（预写标准要求 low-capability model，实际选中 medium_model）；JEV audit=reasonable；未触发冻结 repeat 条件。task_002 已完成：Baseline/Router 自动验收均通过，JEV audit=reasonable，Router 生产成本约低于 Baseline 15%，无 fallback/预算异常/重复触发。当前进入 task_003。
 
 ## 当前交接边界
 
