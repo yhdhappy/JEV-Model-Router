@@ -156,7 +156,7 @@ task_001 已完成官方 first attempt 与人工复核：Baseline=manual_passed�
 
 task_003 attempt=1 已完成复核：Baseline=manual_failed（新增测试硬编码错误）；Router artifact=manual_passed，但官方执行 status=failed（medium provider_timeout，high fallback 被 Budget Guard 拦截）；JEV audit=reasonable，confidence=0.48、difficulty_score=4。冻结 repeat 条件已触发，当前进入受控 repeat Gate，不进入 task_004，也不覆盖 attempt=1。
 
-task_003 attempt=2 已完成并复核：Baseline=manual_failed（新增回归测试仍写死错误 model_id）；Router=manual_failed，继续出现 `medium_model provider_timeout → high_model budget_limit_reached`；JEV audit=reasonable，confidence=0.45、difficulty_score=4。冻结策略仍满足 `jev_confidence_below` 与 `difficulty_score_near_bucket_boundary`，因此允许最后一次 attempt=3；attempt=1/2 的 JSONL 与 artifacts 保持不变。
+task_003 已完成全部允许的 repeat：attempt=2 与 attempt=3 均已复核。两次 Baseline 都因新增测试错误写死 model_id 而 manual_failed；两次 Router 都重复出现 `medium_model provider_timeout → high_model budget_limit_reached`，均 manual_failed；JEV audit 均 reasonable，difficulty_score=4，confidence 约 0.44~0.45。冻结策略允许的 2 次额外运行已耗尽，不再允许 attempt=4；当前转入 task_004。
 
 ## 当前交接边界
 
