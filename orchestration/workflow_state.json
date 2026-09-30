@@ -225,20 +225,32 @@
         },
         "repeat_triggered": true,
         "repeat_triggers": [
-          "jev_confidence_below",
           "unexpected_fallback"
         ],
-        "repeat_reason": "attempt_1_low_confidence_and_unexpected_fallback"
+        "repeat_reason": "attempt_2_external_provider_and_jev_network_failure",
+        "attempt_2": {
+          "baseline_acceptance": "manual_failed",
+          "router_acceptance": "manual_failed",
+          "router_execution_status": "failed",
+          "jev_assessment": "not_applicable",
+          "baseline_error_codes": [
+            "provider_error"
+          ],
+          "router_error_codes": [
+            "jev_network_error",
+            "classifier_cost_unavailable"
+          ]
+        }
       }
     },
     "repeat_gate": {
       "status": "passed",
       "task_id": "task_005",
-      "next_attempt": 2,
+      "next_attempt": 3,
       "authorized_triggers": [
-        "jev_confidence_below",
         "unexpected_fallback"
-      ]
+      ],
+      "attempt_3_is_final_allowed_repeat": true
     }
   }
 }
