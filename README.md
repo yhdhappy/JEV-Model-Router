@@ -188,3 +188,6 @@ task_005 已完成全部允许 repeat：attempt=3 Baseline=manual_failed（同�
 ### task_006 repeat 状态
 
 task_006 attempt=1 已复核：Baseline=manual_failed（虽修好 direct pytest，但 editable install 丢失 jev_router 主包）；Router=manual_failed（`medium_model provider_timeout → high_model budget_limit_reached`）；JEV audit=reasonable，confidence=0.26、difficulty_score=5。冻结 repeat 条件 `jev_confidence_below` 与 `unexpected_fallback` 已触发，当前进入 attempt=2。
+
+
+task_006 attempt=2 已完成复核：Baseline=manual_passed，真实 editable-install 下 direct pytest、python -m pytest、benchmark/jev_router 外部导入均通过；Router=manual_failed；JEV audit=reasonable，confidence=0.27、difficulty_score=5。低置信度与 unexpected fallback 仍满足冻结 repeat 条件，因此允许最后一次 attempt=3。
