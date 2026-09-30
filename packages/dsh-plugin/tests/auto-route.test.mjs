@@ -63,6 +63,7 @@ function settings(overrides = {}) {
     models: DEFAULT_MODELS.map((entry) => ({ ...entry, taskTypes: [...entry.taskTypes] })),
     safeDefault: { provider: 'opencode-go', model: 'gpt-5.6-luna' },
     unmatchedTaskType: 'capability_only',
+    lightRules: true,
     cacheSize: 8,
     autoRoute: true,
     timeoutMs: 1000,
@@ -473,6 +474,90 @@ test('the safe-default path still records what JEV cost', async () => {
   assert.ok(records[0].classifier)
   assert.ok(records[0].answer_confidences)
   assert.equal(records[0].session_scoped, true)
+})
+
+test('an allowlisted trivial task skips JEV entirely', async () => {
+  const ctx = fakeContext()
+  const calls = { count: 0 }
+  const records = []
+  registerAutoRoute(ctx, settings(), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier(calls),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'r1', messages: userTurn('read README.md') },
+      () => {},
+    ),
+  )
+
+  assert.equal(calls.count, 0, 'a light-rule match must not pay the classifier')
+  assert.equal(records[0].route_source, 'light_rule')
+  assert.equal(records[0].rule_id, 'simple_file_read')
+  assert.equal(records[0].jev_called, false)
+  assert.equal(records[0].jev_cost, null)
+  // The synthetic classifier is file_operation/low, so the policy still runs
+  // and picks a concrete model: medium (0.62) beats low (0.65).
+  assert.equal(ctx.captured.streams[0].model, 'qwen3.8-flash')
+  assert.ok(records[0].classifier, 'the log still records what the route assumed')
+})
+
+test('the lightweight layer can be switched off', async () => {
+  const ctx = fakeContext()
+  const calls = { count: 0 }
+  const records = []
+  registerAutoRoute(ctx, settings({ lightRules: false }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier(calls),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'r2', messages: userTurn('read README.md') },
+      () => {},
+    ),
+  )
+
+  assert.equal(calls.count, 1, 'with the layer off the classifier is consulted')
+  assert.equal(records[0].route_source, 'jev')
+  assert.equal(records[0].jev_called, true)
+})
+
+test('a light-rule turn is held like any other decision', async () => {
+  const ctx = fakeContext()
+  const calls = { count: 0 }
+  const records = []
+  registerAutoRoute(ctx, settings(), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier(calls),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'r3', messages: userTurn('list files') },
+      () => {},
+    ),
+  )
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'r3', messages: toolStep() },
+      () => {},
+    ),
+  )
+
+  assert.equal(calls.count, 0)
+  assert.deepEqual(records.map((record) => record.reused), [false, true])
+  assert.deepEqual(
+    records.map((record) => record.route_source),
+    ['light_rule', 'light_rule'],
+  )
 })
 
 test('a request with no user text uses the safe default without classifying', async () => {

@@ -28,6 +28,11 @@
         #   safe_default              — treat it as "no eligible model" and use
         #                               safeDefault below
         unmatchedTaskType: 'capability_only'
+        # Allowlisted trivial tasks (read one explicit file, list the current
+        # directory) are answered without calling JEV at all, removing the
+        # classifier's ~750ms latency and its cost for those turns.
+        # Set false to send every task through JEV.
+        lightRules: true
         # Model used when JEV cannot decide. Never the cheapest tier.
         safeDefault:
           provider: 'opencode-go'

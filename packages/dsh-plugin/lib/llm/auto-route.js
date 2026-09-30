@@ -51,6 +51,7 @@
 
 import { JevError, classifyJev } from '../jev/classifier.js'
 import { NoEligibleModelError, decideRouteForSettings } from '../jev/policy.js'
+import { classifierFromRule, evaluateLightweightRules } from '../jev/rules.js'
 import {
   AUTO_CONTEXT_WINDOW,
   AUTO_MODEL,
@@ -212,6 +213,10 @@ async function* routeStream(ctx, options, settings, state, deps, origin) {
     route_source: decision.source,
     reused: decision.reused === true,
     relaxed_task_type: decision.relaxedTaskType === true,
+    rule_id: decision.ruleId ?? null,
+    // Whether JEV was actually consulted. A light-rule turn costs nothing to
+    // classify, and the log must not imply otherwise.
+    jev_called: decision.jevCalled !== false,
     classifier: decision.classifier ?? null,
     answer_confidences: decision.answerConfidences ?? null,
     jev_cost: decision.jevCost ?? null,
@@ -254,13 +259,35 @@ async function resolveRoute(options, settings, state, deps) {
     })
   }
 
-  const classified = await classifyCached(task, settings, state, deps.classify ?? classifyJev)
-  const carried = {
-    classifier: classified.classifier,
-    answerConfidences: classified.answer_confidences,
-    jevCost: classified.metrics?.exact_cost ?? null,
-    jevLatencyMs: classified.metrics?.latency_ms ?? null,
-  }
+  // The lightweight layer answers allowlisted trivial tasks without calling
+  // JEV at all. The frozen design forbids paying the classifier tax on a task
+  // that needs no semantic judgment, and this is also the only path that
+  // removes the classifier's latency rather than just its cost.
+  const rule = settings.lightRules
+    ? evaluateLightweightRules(task)
+    : { matched: false, rule_id: null }
+
+  const classified = rule.matched
+    ? null
+    : await classifyCached(task, settings, state, deps.classify ?? classifyJev)
+
+  const carried = rule.matched
+    ? {
+        ruleId: rule.rule_id,
+        classifier: classifierFromRule(rule),
+        answerConfidences: null,
+        jevCost: null,
+        jevLatencyMs: null,
+        jevCalled: false,
+      }
+    : {
+        ruleId: null,
+        classifier: classified.classifier,
+        answerConfidences: classified.answer_confidences,
+        jevCost: classified.metrics?.exact_cost ?? null,
+        jevLatencyMs: classified.metrics?.latency_ms ?? null,
+        jevCalled: true,
+      }
 
   // A safe default is a decision like any other: it must be held for the rest
   // of the turn too. Not holding it made every later step of the turn re-decide
@@ -278,7 +305,7 @@ async function resolveRoute(options, settings, state, deps) {
   try {
     // The configured tolerance for an undeclared task type, shared with the
     // `/jev` command so both always report the same model.
-    policy = decideRouteForSettings(classified.classifier, settings.models, {
+    policy = decideRouteForSettings(carried.classifier, settings.models, {
       unmatchedTaskType: settings.unmatchedTaskType,
     })
   } catch (error) {
@@ -288,11 +315,11 @@ async function resolveRoute(options, settings, state, deps) {
   }
 
   return hold(state, sessionId, {
-    source: 'jev',
+    source: rule.matched ? 'light_rule' : 'jev',
     provider: policy.primary.provider,
     model: policy.primary.model,
     ...carried,
-    reason: policy.reason,
+    reason: rule.matched ? [rule.reason, ...policy.reason] : policy.reason,
     relaxedTaskType: policy.relaxed === true,
     fallback: policy.fallbacks.map((entry) => `${entry.provider}/${entry.model}`),
   })

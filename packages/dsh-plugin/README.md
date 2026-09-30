@@ -130,15 +130,29 @@ deepseek 适配器在不匹配时直接抛 `INVALID_REPLAY_STATE`，风险高于
 > 与 Python 的 27 组合对拍测试照常通过；放宽行为是**额外的、显式可配置的**入口
 > `decideRouteRelaxingTaskType()` / `decideRouteForSettings()`。
 
+### 轻量规则层（已实现）
+
+产品设计第 9 节明确要求：**不能让所有任务都调用 JEV**，否则简单任务反而被加上一层"分类税"。
+现在已接入 `lib/jev/rules.js`，它是 `src/jev_router/rules.py` 的逐条镜像：
+
+- 白名单只有两条：**读取某个明确文件**、**列出当前目录**；
+- 命中后**完全不调用 JEV**，因此省掉约 750 ms 延迟和那笔分类费用；
+- 复杂度守卫：出现 debug/fix/调试/修复/架构/多文件等标记，或提示词过长，**一律交给 JEV**；
+- 小跨度降级守卫：最多降一级，不允许 high→low。
+
+命中时决策日志会记为 `route_source: "light_rule"`、`rule_id: "simple_file_read"`、
+`jev_called: false`。可用 `lightRules: false` 关掉整层。
+
 ### 这一版**还没有**的东西
 
 - **没有模型 fallback 链**：一轮内换模型在流式输出开始后不是安全的本地决策，本版交给 DSH 已有的重试机制处理。
 - **没有 Budget Guard**：单任务预算上限尚未接入。
-- **没有轻量规则层**：每次都调 JEV。按当前价格这是 $0.00003/次，成本上可忽略；主要代价是每轮首次请求约 +750 ms 延迟。
 - **没有界面展示**：路由原因只写进决策日志（而且如上所述，会话日志里也看不到），尚未在界面显示。
+  已确认浏览器侧只能访问 `layout / locale / sessions / slots / theme / timer / uiWorkspace / workspaces`
+  这八个服务，读不到宿主插件的私有状态，所以要做界面展示必须先建一条宿主↔浏览器的数据通道。
 - **replay state 会被剥离**：见上文"已知的保真度妥协"。
 
-以上都属于 P2。
+以上都属于 P2 的剩余部分。
 
 ---
 
@@ -161,6 +175,7 @@ profile 的 `package.json` / `cordis.patch.yml`，也不要手工跑 pnpm ——
 | `timeoutMs` | `30000` | 单次 JEV 调用超时（毫秒） |
 | `autoRoute` | `true` | 设为 `false` 则**完全不注册**"自动选择" |
 | `unmatchedTaskType` | `capability_only` | JEV 返回没有模型声明的任务类型（例如 `other`）时的策略：`capability_only` 放宽任务类型过滤、保留能力下限；`safe_default` 直接走保底模型 |
+| `lightRules` | `true` | 白名单轻量规则：命中的简单只读任务**不调用 JEV**。设 `false` 则全部交给 JEV |
 | `safeDefault` | `opencode-go / gpt-5.6-luna` | JEV 失败或无可选模型时使用的模型 |
 | `cacheSize` | `32` | 任务文本判定结果的有界缓存条数 |
 | `models` | 见 `lib/jev/models.js` | 可覆盖的模型表（名称/provider/模型 id/能力档/任务类型/价格/启用） |

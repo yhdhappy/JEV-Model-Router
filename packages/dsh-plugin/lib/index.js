@@ -262,6 +262,8 @@ export function resolveSettings(config) {
     models: resolveModels(raw.models),
     safeDefault,
     unmatchedTaskType,
+    // The lightweight layer answers allowlisted trivial tasks without JEV.
+    lightRules: raw.lightRules !== false,
     cacheSize,
     autoRoute: raw.autoRoute !== false,
     timeoutMs,
