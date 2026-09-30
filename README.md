@@ -199,3 +199,6 @@ task_006 已完成全部允许 repeat：attempt=3 Baseline=manual_passed（与�
 ### task_007 repeat 状态
 
 task_007 attempt=1 已复核：Baseline=manual_passed，Router=manual_passed；Router 通过 JEV 选择 high_model，生产成本约 $0.01820，Baseline 约 $0.02711；JEV audit=reasonable，confidence=0.36、difficulty_score=6。冻结 repeat 条件 `jev_confidence_below` 已触发，当前进入 attempt=2。
+
+
+task_007 attempt=2 已复核：Baseline=manual_failed（provider_timeout）；Router=manual_passed，成功使用 high_model；JEV audit=reasonable，confidence=0.28、difficulty_score=6。低置信度仍满足冻结 repeat 条件，因此允许最后一次 attempt=3。
