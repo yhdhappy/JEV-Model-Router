@@ -23,7 +23,7 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_REPEAT_GATE",
+  "current_task": "PILOT_OFFICIAL_EXECUTION",
   "status": "official_pilot_running",
   "retry_count": 0,
   "stop_reason": null,
@@ -63,8 +63,8 @@
       "task_009",
       "task_010_fallback"
     ],
-    "current_task": "task_009",
-    "execution_gate": "official_repeat_required",
+    "current_task": "task_010_fallback",
+    "execution_gate": "official_pilot_in_progress",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": true,
     "real_provider_gate": {
@@ -124,10 +124,11 @@
         "task_005",
         "task_006",
         "task_007",
-        "task_008"
+        "task_008",
+        "task_009"
       ],
       "last_reviewed_task": "task_009",
-      "next_task": "task_009_repeat",
+      "next_task": "task_010_fallback",
       "task_001": {
         "baseline_acceptance": "manual_passed",
         "router_acceptance": "manual_failed",
@@ -390,7 +391,7 @@
           "router_total_production_cost": 0.032750072,
           "baseline_total_production_cost": 0.04484955
         },
-        "repeat_triggered": true,
+        "repeat_triggered": false,
         "repeat_triggers": [
           "jev_confidence_below",
           "difficulty_score_near_bucket_boundary"
@@ -404,18 +405,27 @@
           "router_selected_model": "high_model",
           "router_total_production_cost": 0.034012002,
           "baseline_total_production_cost": 0.03716299
-        }
+        },
+        "attempt_3": {
+          "baseline_acceptance": "manual_passed",
+          "router_acceptance": "manual_passed",
+          "router_execution_status": "success",
+          "jev_assessment": "reasonable",
+          "router_selected_model": "high_model",
+          "router_total_production_cost": 0.042411432,
+          "baseline_total_production_cost": 0.03636494
+        },
+        "repeat_exhausted": true
       }
     },
     "repeat_gate": {
-      "status": "passed",
+      "status": "completed",
       "task_id": "task_009",
-      "next_attempt": 3,
-      "authorized_triggers": [
-        "jev_confidence_below",
-        "difficulty_score_near_bucket_boundary"
+      "attempts_completed": [
+        2,
+        3
       ],
-      "attempt_3_is_final_allowed_repeat": true
+      "max_extra_runs_exhausted": true
     }
   }
 }
