@@ -169,3 +169,6 @@ task_004 attempt=1 已完成复核：Baseline=manual_passed；Router=manual_fail
 
 
 task_004 attempt=2 已完成复核：Baseline=manual_passed，Router=manual_passed；Router 成功选中 medium_model，生产成本约 $0.01392，Baseline 约 $0.02629；JEV audit=reasonable，confidence=0.30、difficulty_score=4。低置信度与边界分数仍满足冻结 repeat 条件，因此允许最后一次 attempt=3。
+
+
+task_004 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Router=manual_failed；JEV audit=reasonable，confidence=0.25、difficulty_score=4。冻结策略允许的 2 次额外运行已耗尽，不再允许 attempt=4；当前进入 task_005。
