@@ -1,4 +1,4 @@
-# JEV 置信度口径 —— Adjust 闸门裁决材料 v1.0
+# JEV 置信度口径 —— Adjust 闸门裁决材料 v1.1
 
 > 文档性质：**闸门裁决输入材料**（不是结论，不是授权，不修改任何冻结内容）
 > 提交对象：唯一总顾问（ChatGPT Web / GPT-5.6 Sol High）
@@ -6,6 +6,12 @@
 > 关联闸门：`PILOT_ADJUST_GATE`（已通过）/ `PILOT_ADJUST_EXECUTION_GATE`（已通过，执行未完成）
 > 关联证据：`benchmark/results/pilot_runs.jsonl`、`orchestration/workflow_state.json`
 > 配套技术记录：`docs/dsh-integration/JEV_置信度聚合口径_发现记录_v0.1.md`
+>
+> **v1.1 修订（2026-10-01）**：由 DSH 子 Agent 复核后修正统计口径——§2.1 曾把 `23`、
+> `0.371`、`87%` 三个不同口径的数字并列，已改为逐行自洽；§0 "9 个里 7 个"更正为
+> "8 个调用 JEV 的真实任务里 7 个"；§2.4-1 归因从"只登记主要触发原因"更正为代码级
+> "repeat trigger 自动校验覆盖不足"；§3 补充"探针数字需实时调用 API、无法用历史记录复核"。
+> **核心结论与所有事实性统计不变**，本次仅统一口径与归因表述。
 
 ---
 
@@ -17,7 +23,8 @@ JEV 这个"给任务定难度"的裁判，**判得其实很稳、也很准**—�
 的分数。而这五项里有一项（难度打分）用的打分方式跟其它四项不一样，它**经常直接报 0**，
 哪怕它心里其实很有数。一个 0，就把整条"没把握"的信号拉爆了。
 
-结果是：**9 个真实任务里有 7 个被判成"没把握"，全部被迫跑了三遍，把允许的重复次数用光了。**
+结果是：**9 个真实任务里有 8 个实际调用了 JEV，其中 7 个被判成"没把握"，全部被迫跑了三遍，
+把允许的重复次数用光了。**（第 9 个 task_001 走的是轻量规则、根本没问 JEV。）
 
 这件事没有让项目出错，但它说明：**"没把握就重跑"这道保险，现在实际上是常开的**。
 按现在的规则继续往下走，你以后每接一个新任务，大概率还是会被要求重跑。
@@ -53,10 +60,19 @@ JEV 这个"给任务定难度"的裁判，**判得其实很稳、也很准**—�
 
 ### 2.1 置信度统计
 
+三种口径，每一行的样本数、均值、百分比都按**同一口径**计算（不再混用）：
+
 | 口径 | 样本数 | 均值 | 范围 | `< 0.70` |
 |---|---|---|---|---|
-| 真实任务（`route_source=jev`） | **21** | 0.347 | 0.17 – 0.94 | **20（95%）** |
-| 含受控 Mock `task_010_fallback` | 23 | 0.371 | 0.17 – 0.94 | 20（87%） |
+| 真实任务运行（`route_source=jev`，排除受控 Mock） | **21** | 0.3467 | 0.17 – 0.94 | **20（95.2%）** |
+| 仅 `route_source=jev`（含 Mock 的 router 那一条） | 22 | 0.3709 | 0.17 – 0.94 | 20（90.9%） |
+| 所有带 confidence 的记录（含 Mock 的 baseline + router 两条） | 23 | 0.3930 | 0.17 – 0.94 | 20（87.0%） |
+
+> **勘误说明**：本材料初稿曾在"含受控 Mock"一行里把 `23`、`0.371`、`87%` 三个数字并列，
+> 但它们分属不同口径，不能同时成立。已改为上表逐行自洽。差异根因是
+> `task_010_fallback` 一次运行产生了 **baseline（`route_source=fallback`, conf 0.88）**
+> 和 **router（`route_source=jev`, conf 0.88）** 两条都带置信度的记录。
+> 本材料的核心结论只依赖第一行（真实任务），不受该口径差异影响。
 
 `task_001` 走 `light_rule`（未调用 JEV，无置信度）；`task_005` 的 attempt 2 因
 `jev_network_error` 走 `safe_default`（无有效分类器）；其余记录为 `manual_override`，无置信度。
@@ -99,7 +115,13 @@ JEV 这个"给任务定难度"的裁判，**判得其实很稳、也很准**—�
 
 1. `task_005` 两次运行置信度为 0.46 与 0.49，**均在阈值以下**，但
    `workflow_state.json` 的 `repeat_triggers` 只记录了 `unexpected_fallback`，
-   未记录 `jev_confidence_below`。可能是当时只登记了主要触发原因。
+   未记录 `jev_confidence_below`。**代码级根因已定位**：
+   `benchmark/official_pilot.py` 的 `_validate_repeat_triggers()` 只对 `task_003`
+   强制校验"必须包含两个客观冻结触发条件"（`if task_id != "task_003": return`），
+   其余任务的 `repeat_triggers` 集合是否完整**未经同等自动复核**。因此这不是
+   "当时只登记主要触发原因"，而是 **repeat trigger 的自动校验覆盖不足，存在人工漏登风险**。
+   该缺陷不影响本材料的统计数字（统计直接从 `pilot_runs.jsonl` 的原始置信度重算），
+   但说明历史 `workflow_state.json` 里的 `repeat_triggers` 字段不能作为完整性证据。
 2. `workflow_state.json` 中 `adjust_execution_gate.real_adjust_started = false`、
    `next_task = task_003`，但磁盘上已存在 `benchmark/results/adjust_runs.jsonl` 与
    `benchmark/results/adjust_artifacts/task_003/attempt_1/`。**状态文件落后于实际产物。**
@@ -108,6 +130,11 @@ JEV 这个"给任务定难度"的裁判，**判得其实很稳、也很准**—�
 ---
 
 ## 3. 机制（已实测复现）
+
+> **可核验性说明**：本节所有数字来自**实时调用 System One API**，不是从 `pilot_runs.jsonl`
+> 反查得到。历史 Pilot 记录只保存了聚合后的单个 `confidence`，**没有保留五项分解和原始概率分布**，
+> 因此本节数字无法用仓库内既有数据独立复核，只能用第 8 节的命令重新实时调用一次来复现。
+> 也正因如此，"Pilot 当年的偏低是否同样由 score 项归零主导"仍属推断（见第 4 节）。
 
 对任务文本 `测试一下JEV` 直接读取 System One 原始响应（`jev-1.13.0`）：
 
