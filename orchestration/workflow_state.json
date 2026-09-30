@@ -23,7 +23,7 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_REPEAT_GATE",
+  "current_task": "PILOT_OFFICIAL_EXECUTION",
   "status": "official_pilot_running",
   "retry_count": 0,
   "stop_reason": null,
@@ -63,8 +63,8 @@
       "task_009",
       "task_010_fallback"
     ],
-    "current_task": "task_008",
-    "execution_gate": "official_repeat_required",
+    "current_task": "task_009",
+    "execution_gate": "official_pilot_in_progress",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": true,
     "real_provider_gate": {
@@ -123,10 +123,11 @@
         "task_004",
         "task_005",
         "task_006",
-        "task_007"
+        "task_007",
+        "task_008"
       ],
       "last_reviewed_task": "task_008",
-      "next_task": "task_008_repeat",
+      "next_task": "task_009",
       "task_001": {
         "baseline_acceptance": "manual_passed",
         "router_acceptance": "manual_failed",
@@ -348,7 +349,7 @@
             "budget_limit_reached"
           ]
         },
-        "repeat_triggered": true,
+        "repeat_triggered": false,
         "repeat_triggers": [
           "jev_confidence_below",
           "difficulty_score_near_bucket_boundary",
@@ -365,19 +366,29 @@
             "provider_timeout",
             "budget_limit_reached"
           ]
-        }
+        },
+        "attempt_3": {
+          "baseline_acceptance": "manual_passed",
+          "router_acceptance": "manual_failed",
+          "router_execution_status": "failed",
+          "jev_assessment": "reasonable",
+          "baseline_validation": "original_tests_41_pass_and_route_source_semantic_probe_pass",
+          "router_error_codes": [
+            "provider_timeout",
+            "budget_limit_reached"
+          ]
+        },
+        "repeat_exhausted": true
       }
     },
     "repeat_gate": {
-      "status": "passed",
+      "status": "completed",
       "task_id": "task_008",
-      "next_attempt": 3,
-      "authorized_triggers": [
-        "jev_confidence_below",
-        "difficulty_score_near_bucket_boundary",
-        "unexpected_fallback"
+      "attempts_completed": [
+        2,
+        3
       ],
-      "attempt_3_is_final_allowed_repeat": true
+      "max_extra_runs_exhausted": true
     }
   }
 }
