@@ -117,7 +117,7 @@ async function runJevCommand(invocation, settings) {
     }
   }
 
-  const { classifier, metrics } = outcome
+  const { classifier, metrics, answer_confidences: perAnswer = {} } = outcome
   const inputSource = rawInput.length > 0 ? '命令参数' : '最近一条消息'
   const reference = settings.modelLayers[classifier.required_capability] ?? '（未配置）'
 
@@ -128,9 +128,23 @@ async function runJevCommand(invocation, settings) {
     source: inputSource,
     task_chars: task.length,
     classifier,
+    answer_confidences: perAnswer,
     metrics,
     reference_model: reference,
   })
+
+  const show = (value) => (value === undefined ? '—' : String(value))
+  const breakdown = [
+    `类型 ${show(perAnswer.task_type)}`,
+    `难度 ${show(perAnswer.difficulty_score)}`,
+    `分档 ${show(perAnswer.difficulty_bucket)}`,
+    `能力 ${show(perAnswer.required_capability)}`,
+    `风险 ${show(perAnswer.risk_level)}`,
+  ].join('｜')
+
+  const zeroConfidence = Object.entries(perAnswer)
+    .filter(([, value]) => value === 0)
+    .map(([key]) => key)
 
   const lines = [
     `JEV 判定（${metrics.returned_model}｜${metrics.latency_ms}ms｜$${metrics.exact_cost.toFixed(6)}｜输入：${inputSource}）`,
@@ -139,12 +153,24 @@ async function runJevCommand(invocation, settings) {
     `难度：${classifier.difficulty_score} / 10（${classifier.difficulty_bucket}）`,
     `所需能力：${classifier.required_capability}`,
     `风险级别：${classifier.risk_level}`,
-    `置信度：${classifier.confidence}`,
+    `置信度：${classifier.confidence}（取各项最小值，与已冻结口径一致）`,
+    `各项置信度：${breakdown}`,
+  ]
+
+  if (zeroConfidence.length > 0) {
+    lines.push(
+      '',
+      `⚠ ${zeroConfidence.join('、')} 自报置信度为 0，已把整体置信度拉到 0。` +
+        '该问题项的原始概率分布可能仍有信息量，这是当前聚合口径的已知脆弱点。',
+    )
+  }
+
+  lines.push(
     '',
     `参考模型（按已冻结的三层配置，未经完整 Policy）：${reference}`,
     '',
     '说明：本命令只做判断，不会改变本次请求使用的模型。',
-  ]
+  )
 
   return { kind: 'success', text: lines.join('\n') }
 }

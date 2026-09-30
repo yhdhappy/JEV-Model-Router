@@ -78,6 +78,26 @@ test('parseResponse takes the minimum reported confidence', () => {
   assert.equal(classifier.confidence, 0.5, 'the lowest confidence wins')
 })
 
+test('parseResponse reports per-answer confidence for diagnosis', () => {
+  const { answer_confidences: perAnswer } = parseResponse(payload(), 1)
+  assert.deepEqual(perAnswer, {
+    task_type: 0.86,
+    difficulty_score: 0.6,
+    difficulty_bucket: 0.7,
+    required_capability: 0.9,
+    risk_level: 0.5,
+  })
+})
+
+test('a zero-confidence answer zeroes the frozen minimum', () => {
+  const zeroed = payload()
+  zeroed.answers.difficulty_score.confidence = 0
+  const { classifier, answer_confidences: perAnswer } = parseResponse(zeroed, 1)
+  assert.equal(classifier.confidence, 0, 'min() collapses to 0 — the known weak point')
+  assert.equal(perAnswer.difficulty_score, 0)
+  assert.equal(perAnswer.task_type, 0.86, 'the other answers keep their signal')
+})
+
 test('parseResponse rejects malformed payloads', () => {
   assert.throws(() => parseResponse(null, 1), JevError)
   assert.throws(() => parseResponse(payload({ model: '' }), 1), JevError)

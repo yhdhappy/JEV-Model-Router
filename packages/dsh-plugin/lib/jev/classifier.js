@@ -93,6 +93,7 @@ export function parseResponse(payload, latencyMs) {
 
   const values = {}
   const confidences = []
+  const answerConfidences = {}
   for (const name of ANSWER_NAMES) {
     const answer = answers[name]
     if (typeof answer !== 'object' || answer === null) throw schemaError()
@@ -111,6 +112,7 @@ export function parseResponse(payload, latencyMs) {
         throw schemaError()
       }
       confidences.push(confidence)
+      answerConfidences[name] = confidence
     }
   }
 
@@ -148,6 +150,10 @@ export function parseResponse(payload, latencyMs) {
       latency_ms: latencyMs,
       exact_cost: exactCost,
     },
+    // Per-answer confidence is diagnostic only. The frozen router contract
+    // still reads `classifier.confidence` (the minimum), so this addition
+    // makes a deflated minimum explainable without changing any decision.
+    answer_confidences: answerConfidences,
   }
 }
 

@@ -113,7 +113,7 @@ test('live JEV call returns a judgment and writes one decision record', async (t
   )
 
   assert.equal(result.kind, 'success', result.text)
-  for (const field of ['任务类型', '难度', '所需能力', '风险级别', '置信度']) {
+  for (const field of ['任务类型', '难度', '所需能力', '风险级别', '置信度', '各项置信度']) {
     assert.match(result.text, new RegExp(field))
   }
   assert.doesNotMatch(result.text, /sk-/, 'no key material may reach the output')
@@ -127,5 +127,15 @@ test('live JEV call returns a judgment and writes one decision record', async (t
   assert.ok(record.classifier.difficulty_score >= 1)
   assert.ok(record.classifier.difficulty_score <= 10)
   assert.ok(record.metrics.exact_cost >= 0)
+  assert.equal(
+    typeof record.answer_confidences,
+    'object',
+    'per-answer confidence is recorded as evidence for the adjust gate',
+  )
+  assert.ok(
+    record.classifier.confidence ===
+      Math.min(...Object.values(record.answer_confidences)),
+    'the frozen minimum rule still governs the classifier result',
+  )
   assert.ok(!JSON.stringify(record).includes('Bearer'))
 })
