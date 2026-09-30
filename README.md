@@ -191,3 +191,6 @@ task_006 attempt=1 已复核：Baseline=manual_failed（虽修好 direct pytest�
 
 
 task_006 attempt=2 已完成复核：Baseline=manual_passed，真实 editable-install 下 direct pytest、python -m pytest、benchmark/jev_router 外部导入均通过；Router=manual_failed；JEV audit=reasonable，confidence=0.27、difficulty_score=5。低置信度与 unexpected fallback 仍满足冻结 repeat 条件，因此允许最后一次 attempt=3。
+
+
+task_006 已完成全部允许 repeat：attempt=3 Baseline=manual_passed（与已验证 attempt=2 相同的 packaging 修复，README caveat 已移除），Router=manual_failed；JEV audit=reasonable，confidence=0.28、difficulty_score=5。冻结策略允许的额外运行已耗尽，当前进入 task_007。
