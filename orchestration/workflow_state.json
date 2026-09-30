@@ -462,6 +462,25 @@
       "new_results_path": "benchmark/results/adjust_runs.jsonl",
       "new_artifacts_dir": "benchmark/results/adjust_artifacts",
       "next_gate": "PILOT_ADJUST_EXECUTION_GATE"
+    },
+    "adjust_execution_gate": {
+      "status": "passed",
+      "methodology": "router_only",
+      "affected_task_ids": [
+        "task_003",
+        "task_004",
+        "task_005",
+        "task_006",
+        "task_008"
+      ],
+      "strict_order": true,
+      "one_adjust_run_per_task": true,
+      "advisor_review": "passed",
+      "independent_review": "passed",
+      "results_path": "benchmark/results/adjust_runs.jsonl",
+      "artifacts_dir": "benchmark/results/adjust_artifacts",
+      "real_adjust_started": false,
+      "next_task": "task_003"
     }
   }
 }

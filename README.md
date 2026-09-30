@@ -247,3 +247,8 @@ task_009 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Route
 冻结的 phase-1 Adjust 配置在 `benchmark/pilot_adjust_config.yaml`，严格 loader 为 `benchmark/pilot_adjust_config.py`：timeout `300` 秒，单次 Adjust attempt 预算 `$1.50`，估算上限保持 low `$0.10`、medium `$0.25`、high `$1.00`；受影响任务严格为 `task_003`、`task_004`、`task_005`、`task_006`、`task_008`。新结果只能写入 `benchmark/results/adjust_runs.jsonl` 与 `adjust_artifacts/` 等新路径。
 
 `benchmark/pilot_adjust.py` 目前只支持只读 preflight：它要求原始 Pilot slot 完整且 decision 为 `adjust`，只接受上述五个任务，并且默认不执行任务、不调用 Provider/JEV、不读凭据、不写结果。当前 phase 不包含 UI、数据库、Web server 或 Agent Adapter。PILOT_ADJUST_GATE Phase 1 已经总顾问与独立审核通过；下一道 Gate 是 `PILOT_ADJUST_EXECUTION_GATE`，负责为五个受影响任务建立显式授权、独立 Adjust 结果/Artifacts 和安全重跑顺序。真实 Adjust rerun 尚未执行。
+
+
+## PILOT_ADJUST_EXECUTION_GATE
+
+该 Gate 已经总顾问与独立审核通过。Adjust 方法固定为 Router-only，不重跑 Baseline；严格顺序为 task_003 → task_004 → task_005 → task_006 → task_008，每个任务只允许 1 次 Adjust 运行。原始 Pilot 结果继续作为不可修改历史对照。真实 Adjust 尚未开始，下一步为 task_003 单任务 preflight/execution。
