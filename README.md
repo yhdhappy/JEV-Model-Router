@@ -216,3 +216,8 @@ task_008 attempt=2 已复核：Baseline=manual_passed（原始 41 项 logging/Ro
 
 
 task_008 已完成全部允许 repeat：attempt=3 Baseline=manual_passed（原始 41 项测试全过，safe-default/fallback/normal 路由语义 probe 通过），Router=manual_failed；JEV audit=reasonable，confidence=0.36、difficulty_score=4。额外运行次数已耗尽，当前进入 task_009。
+
+
+### task_009 repeat 状态
+
+task_009 attempt=1 已复核：Baseline=manual_passed，Router=manual_passed；Router 使用 high_model，生产成本约 $0.03275，Baseline 约 $0.04485；JEV audit=reasonable，confidence=0.17、difficulty_score=8。冻结 repeat 条件 `jev_confidence_below` 与 `difficulty_score_near_bucket_boundary` 已触发，当前进入 attempt=2。
