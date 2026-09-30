@@ -166,3 +166,6 @@ T-15、10 个 Pilot 任务准备、真实 Provider Gate 与 `PILOT_RUNNER_WIRING
 ### task_004 repeat 状态
 
 task_004 attempt=1 已完成复核：Baseline=manual_passed；Router=manual_failed（`medium_model provider_timeout → high_model budget_limit_reached`）；JEV audit=reasonable，confidence=0.23、difficulty_score=4。冻结 repeat 条件 `jev_confidence_below`、`difficulty_score_near_bucket_boundary` 与 `unexpected_fallback` 已触发，当前进入 task_004 attempt=2。
+
+
+task_004 attempt=2 已完成复核：Baseline=manual_passed，Router=manual_passed；Router 成功选中 medium_model，生产成本约 $0.01392，Baseline 约 $0.02629；JEV audit=reasonable，confidence=0.30、difficulty_score=4。低置信度与边界分数仍满足冻结 repeat 条件，因此允许最后一次 attempt=3。
