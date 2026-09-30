@@ -1148,14 +1148,24 @@ def _sanitize_artifact_text(value: str) -> str:
     for candidate in (key_path, str(Path(key_path).expanduser()) if key_path else None):
         if candidate:
             value = value.replace(candidate, "[REDACTED_KEY_PATH]")
-    precise_patterns = (
-        re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"),
-        re.compile(r"(?i)\b(?:api[_-]?key|access[_-]?token|password|secret)\b\s*[:=]\s*(?:['\"][^'\"]*['\"]|[^\s,;]+)"),
-        re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9_-]{7,}\b"),
-        re.compile(r"(?<![A-Za-z0-9_.-])/(?:Users|home)/[^\s\"'<>]+"),
+    bearer_pattern = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
+    assignment_pattern = re.compile(
+        r"(?i)(?P<prefix>\b(?:api[_-]?key|access[_-]?token|password|secret)\b\s*[:=]\s*)"
+        r"(?:(?P<quote>['\"])[^'\"]*(?P=quote)|[^\s,;'\"]+)"
     )
-    for pattern in precise_patterns:
-        value = pattern.sub("[REDACTED]", value)
+
+    def redact_assignment(match: re.Match[str]) -> str:
+        quote = match.group("quote") or ""
+        return f"{match.group('prefix')}{quote}[REDACTED]{quote}"
+
+    value = bearer_pattern.sub("[REDACTED]", value)
+    value = assignment_pattern.sub(redact_assignment, value)
+    value = re.sub(r"\bsk-[A-Za-z0-9][A-Za-z0-9_-]{7,}\b", "[REDACTED]", value)
+    value = re.sub(
+        r"(?<![A-Za-z0-9_.-])/(?:Users|home)/[^\s\"'<>]+",
+        "[REDACTED]",
+        value,
+    )
     return value
 
 

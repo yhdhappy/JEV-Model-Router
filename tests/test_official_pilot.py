@@ -31,29 +31,27 @@ def _preflight(monkeypatch, tmp_path, task_id, records=(), key=True, phase="A", 
         monkeypatch.setenv("JEV_API_KEY_FILE", str(key_path))
     else:
         monkeypatch.delenv("JEV_API_KEY_FILE", raising=False)
-    workflow_state_path = ROOT / "orchestration" / "workflow_state.json"
-    if phase == "A" and not workflow_overrides:
-        state = json.loads(workflow_state_path.read_text(encoding="utf-8"))
+    if phase not in {"A", "B"}:
+        raise ValueError("test workflow phase must be A or B")
+    template_path = ROOT / "orchestration" / "workflow_state.json"
+    state = json.loads(template_path.read_text(encoding="utf-8"))
+    if phase == "A":
         state["status"] = "pilot_config_frozen"
         state["current_task"] = "PILOT_OFFICIAL_EXECUTION_GATE"
         state["pilot_preparation"]["execution_gate"] = "official_execution_mode_required"
         state["pilot_preparation"]["real_pilot_started"] = False
-        workflow_state_path = tmp_path / "workflow_state.json"
-        workflow_state_path.write_text(json.dumps(state), encoding="utf-8")
-    elif phase == "B" or workflow_overrides:
-        state = json.loads(workflow_state_path.read_text(encoding="utf-8"))
-        if phase == "B":
-            state["status"] = "official_pilot_running"
-            state["current_task"] = "PILOT_OFFICIAL_EXECUTION"
-            state["pilot_preparation"]["execution_gate"] = "official_pilot_in_progress"
-            state["pilot_preparation"]["real_pilot_started"] = True
-        for key, value in (workflow_overrides or {}).items():
-            if key in {"status", "current_task"}:
-                state[key] = value
-            else:
-                state["pilot_preparation"][key] = value
-        workflow_state_path = tmp_path / "workflow_state.json"
-        workflow_state_path.write_text(json.dumps(state), encoding="utf-8")
+    else:
+        state["status"] = "official_pilot_running"
+        state["current_task"] = "PILOT_OFFICIAL_EXECUTION"
+        state["pilot_preparation"]["execution_gate"] = "official_pilot_in_progress"
+        state["pilot_preparation"]["real_pilot_started"] = True
+    for key, value in (workflow_overrides or {}).items():
+        if key in {"status", "current_task"}:
+            state[key] = value
+        else:
+            state["pilot_preparation"][key] = value
+    workflow_state_path = tmp_path / "workflow_state.json"
+    workflow_state_path.write_text(json.dumps(state), encoding="utf-8")
     return official.preflight_official_task(
         task_id,
         config_path=ROOT / "benchmark" / "pilot_config.yaml",
@@ -634,6 +632,38 @@ def test_evidence_secret_filter_is_precise_and_rejects_key_path(monkeypatch, tmp
         ("secret: 'quoted-value'", "quoted-value"),
     ):
         assert secret not in official._sanitize_artifact_text(assignment)
+
+    source_like = 'message="Authorization: Bearer token-secret; secret=private-value",'
+    sanitized_like = official._sanitize_artifact_text(source_like)
+    assert sanitized_like.startswith('message="') and sanitized_like.endswith('",')
+    assert "token-secret" not in sanitized_like
+    assert "private-value" not in sanitized_like
+    quoted_source = '"api_key=api-key-secret-123456"'
+    sanitized_quoted = official._sanitize_artifact_text(quoted_source)
+    assert sanitized_quoted.startswith('"') and sanitized_quoted.endswith('"')
+    assert "api-key-secret-123456" not in sanitized_quoted
+
+    source = "\n".join(
+        (
+            'message="Authorization: Bearer token-secret; secret=private-value",',
+            'api_value = "api_key=api-key-secret-123456"',
+            'password_value = "password=hunter2"',
+            'colon_value = "password: hunter2"',
+            'quoted_value = "secret=\'quoted-value\'"',
+            'harmless = "source identifier api_key is harmless"',
+        )
+    )
+    sanitized_source = official._sanitize_artifact_text(source)
+    compile(sanitized_source, "<artifact>", "exec")
+    for secret in (
+        "token-secret",
+        "private-value",
+        "api-key-secret-123456",
+        "hunter2",
+        "quoted-value",
+    ):
+        assert secret not in sanitized_source
+    assert "source identifier api_key is harmless" in sanitized_source
 
 
 def test_manual_artifact_content_verification_rejects_tampered_response_and_workspace(monkeypatch, tmp_path):
