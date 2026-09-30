@@ -23,8 +23,8 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_ADJUST_GATE",
-  "status": "pilot_complete_adjust",
+  "current_task": "PILOT_ADJUST_EXECUTION_GATE",
+  "status": "pilot_adjust_phase1_passed",
   "retry_count": 0,
   "stop_reason": null,
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
@@ -63,8 +63,8 @@
       "task_009",
       "task_010_fallback"
     ],
-    "current_task": "PILOT_ADJUST_GATE",
-    "execution_gate": "pilot_complete_adjust_required",
+    "current_task": "PILOT_ADJUST_EXECUTION_GATE",
+    "execution_gate": "adjust_execution_wiring_required",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": true,
     "real_provider_gate": {
@@ -434,6 +434,34 @@
       "independent_review": "passed",
       "summary_json": "benchmark/results/pilot_summary.json",
       "summary_markdown": "benchmark/results/pilot_summary.md"
+    },
+    "adjust_gate": {
+      "status": "passed",
+      "phase": "PILOT_ADJUST_GATE",
+      "scope": "timeout_fallback_budget_only",
+      "provider_timeout_seconds": 300,
+      "budget_limit_per_adjust_attempt": 1.5,
+      "estimated_max_costs": {
+        "low_model": 0.1,
+        "medium_model": 0.25,
+        "high_model": 1.0
+      },
+      "affected_task_ids": [
+        "task_003",
+        "task_004",
+        "task_005",
+        "task_006",
+        "task_008"
+      ],
+      "config": "benchmark/pilot_adjust_config.yaml",
+      "preflight_module": "benchmark/pilot_adjust.py",
+      "advisor_review": "passed",
+      "independent_review": "passed",
+      "execution": "preflight_only_not_executed",
+      "original_pilot_immutable": true,
+      "new_results_path": "benchmark/results/adjust_runs.jsonl",
+      "new_artifacts_dir": "benchmark/results/adjust_artifacts",
+      "next_gate": "PILOT_ADJUST_EXECUTION_GATE"
     }
   }
 }

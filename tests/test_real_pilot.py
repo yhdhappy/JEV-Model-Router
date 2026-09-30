@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import benchmark.real_pilot as real_pilot_module
 from benchmark.real_pilot import (
     DEFAULT_REGISTRY_PATH,
     OFFICIAL_RESULT_PATH,
@@ -136,6 +137,41 @@ def runtime(**overrides):
     }
     values.update(overrides)
     return RealPilotRuntimeConfig(**values)
+
+
+def test_adjust_runtime_passes_explicit_timeout_to_every_opencode_provider(monkeypatch):
+    created = []
+
+    class CapturedProvider:
+        def __init__(self, *, timeout):
+            created.append(timeout)
+
+    monkeypatch.setattr(real_pilot_module, "OpenCodeGoProvider", CapturedProvider)
+    build_real_router(
+        runtime(provider_timeout_seconds=300),
+        jev_factory=FakeJEV,
+    )
+
+    assert created == [300, 300, 300]
+
+
+def test_default_runtime_timeout_remains_120_for_every_opencode_provider(monkeypatch):
+    created = []
+
+    class CapturedProvider:
+        def __init__(self, *, timeout):
+            created.append(timeout)
+
+    monkeypatch.setattr(real_pilot_module, "OpenCodeGoProvider", CapturedProvider)
+    build_real_router(runtime(), jev_factory=FakeJEV)
+
+    assert created == [120.0, 120.0, 120.0]
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_runtime_rejects_non_positive_or_non_finite_provider_timeout(timeout):
+    with pytest.raises(RealPilotConfigurationError, match="provider_timeout_seconds"):
+        runtime(provider_timeout_seconds=timeout)
 
 
 def fake_factories(task_type="coding"):

@@ -553,6 +553,59 @@ def test_failed_primary_exposure_allows_fallback_at_equality():
     assert fallback.call_count == 1
 
 
+def test_original_pilot_budget_blocks_high_after_medium_timeout_with_classifier_cost():
+    primary = MockProvider([MockScenario.TIMEOUT])
+    fallback = MockProvider([response("fallback")])
+    router = make_router(
+        {
+            "medium_model": model("medium_model", capability="medium", price=1),
+            "high_model": model("high_model", capability="high", price=2),
+        },
+        {"medium_model": primary, "high_model": fallback},
+        jev=lambda request: classifier(capability="medium"),
+        estimates={"medium_model": 0.25, "high_model": 1.00},
+        classifier_cost_resolver=lambda req, value: exact_cost(0.00004),
+    )
+
+    result = router.route(request("fix the failing code", budget_limit=1.25))
+
+    assert result.status == "failed"
+    assert result.errors[-1].code == "budget_limit_reached"
+    assert result.fallback_history == [
+        "medium_model:provider_timeout",
+        "high_model:budget_limit_reached",
+    ]
+    assert primary.call_count == 1
+    assert fallback.call_count == 0
+
+
+def test_adjust_budget_allows_high_after_medium_timeout_with_conservative_exposure():
+    primary = MockProvider([MockScenario.TIMEOUT])
+    fallback = MockProvider([response("fallback")])
+    router = make_router(
+        {
+            "medium_model": model("medium_model", capability="medium", price=1),
+            "high_model": model("high_model", capability="high", price=2),
+        },
+        {"medium_model": primary, "high_model": fallback},
+        jev=lambda request: classifier(capability="medium"),
+        estimates={"medium_model": 0.25, "high_model": 1.00},
+        classifier_cost_resolver=lambda req, value: exact_cost(0.00004),
+    )
+
+    result = router.route(request("fix the failing code", budget_limit=1.50))
+
+    assert result.status == "success"
+    assert result.route_source == "fallback"
+    assert result.selected_model == "high_model"
+    assert result.fallback_history == [
+        "medium_model:provider_timeout",
+        "high_model:success",
+    ]
+    assert primary.call_count == 1
+    assert fallback.call_count == 1
+
+
 def test_jev_success_without_cost_resolver_stops_before_execution():
     provider = MockProvider([response()])
     router = make_router(

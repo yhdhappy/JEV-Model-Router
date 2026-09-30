@@ -1,0 +1,39 @@
+# PILOT_ADJUST_GATE phase 1 configuration. Declarative and preflight-only.
+# The original Pilot configuration and result paths are historical evidence and
+# must never be used as Adjust outputs.
+schema_version: "0.1"
+
+adjust:
+  phase: PILOT_ADJUST_GATE
+  scope: timeout_fallback_budget_only
+  affected_task_ids:
+    - task_003
+    - task_004
+    - task_005
+    - task_006
+    - task_008
+
+source_pilot:
+  official_config_path: benchmark/pilot_config.yaml
+  results_path: benchmark/results/pilot_runs.jsonl
+  summary_json_path: benchmark/results/pilot_summary.json
+  summary_markdown_path: benchmark/results/pilot_summary.md
+  expected_decision: adjust
+
+budget:
+  provider_timeout_seconds: 300
+  budget_limit_per_adjust_attempt: 1.50
+  estimated_max_costs:
+    low_model: 0.10
+    medium_model: 0.25
+    high_model: 1.00
+
+outputs:
+  adjust_results_path: benchmark/results/adjust_runs.jsonl
+  adjust_artifacts_dir: benchmark/results/adjust_artifacts
+  adjust_summary_json_path: benchmark/results/adjust_summary.json
+  adjust_summary_markdown_path: benchmark/results/adjust_summary.md
+
+execution_gate:
+  execution_enabled: false
+  preflight_only: true

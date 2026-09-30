@@ -84,6 +84,7 @@ class RealPilotRuntimeConfig:
     baseline_model: str
     budget_limit: float
     estimated_max_costs: Mapping[str, Union[int, float, Decimal]]
+    provider_timeout_seconds: Union[int, float, Decimal] = 120.0
     registry_path: Path = DEFAULT_REGISTRY_PATH
     safe_default_model: Optional[str] = None
 
@@ -91,6 +92,7 @@ class RealPilotRuntimeConfig:
         if not isinstance(self.baseline_model, str) or not self.baseline_model.strip():
             raise RealPilotConfigurationError("baseline_model must be non-empty")
         _validate_finite_non_negative(self.budget_limit, "budget_limit")
+        _validate_positive_finite(self.provider_timeout_seconds, "provider_timeout_seconds")
         if not isinstance(self.estimated_max_costs, Mapping):
             raise RealPilotConfigurationError("estimated_max_costs must be a mapping")
         normalized: Dict[str, Union[int, float, Decimal]] = {}
@@ -191,7 +193,7 @@ def build_real_router(
         provider = (
             provider_factory(name, definition)
             if provider_factory is not None
-            else OpenCodeGoProvider()
+            else OpenCodeGoProvider(timeout=runtime.provider_timeout_seconds)
         )
         providers[name] = (
             _EvidenceProvider(provider, name, _evidence_capture)
@@ -604,6 +606,13 @@ def _validate_finite_non_negative(value: Any, label: str) -> None:
         raise RealPilotConfigurationError(f"{label} must be finite and non-negative")
     if not math.isfinite(float(value)) or value < 0:
         raise RealPilotConfigurationError(f"{label} must be finite and non-negative")
+
+
+def _validate_positive_finite(value: Any, label: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float, Decimal)):
+        raise RealPilotConfigurationError(f"{label} must be finite and positive")
+    if not math.isfinite(float(value)) or value <= 0:
+        raise RealPilotConfigurationError(f"{label} must be finite and positive")
 
 
 def _reject_non_finite(value: Any) -> None:

@@ -237,3 +237,13 @@ task_009 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Route
 ## Pilot 最终结论
 
 10 个官方 Pilot slot 已完成并生成 `benchmark/results/pilot_summary.json` 与 `benchmark/results/pilot_summary.md`。总顾问结论为 **Adjust**，决策有效性为 **mixed**：JEV 首轮 9/9 人工判断均为 reasonable，受控 fallback/budget 验证通过，成功可比任务中 Router 3/4 成本更低；但首轮验收 Router 4/9，低于 Baseline 6/9，并多次出现 `medium_model provider_timeout → high_model budget_limit_reached`。因此当前不进入真实 Agent 集成/UI，先进入 `PILOT_ADJUST_GATE`，只修 timeout/fallback/budget 相关问题并重跑受影响任务。
+
+## 当前阶段：PILOT_ADJUST_GATE（phase 1）
+
+原始 Pilot 结果是不可改写的历史证据：`benchmark/pilot_config.yaml`、`benchmark/results/pilot_runs.jsonl`、原始 summary 和原始 artifacts 不作为 Adjust 输出。当前只完成离线配置、运行时接线和 preflight gate；Adjust 真实重跑尚未执行。
+
+根因是参数交互而非 Router 放弃保守计费：JEV 分类器有正成本时，`0.00004 + medium_model 0.25 + high_model 1.00 = 1.25004`，因此原 `$1.25` 预算会在 medium 超时后阻断 high fallback。Router 仍累计已调用但失败的 primary 估算暴露，不降低 high 估算值。
+
+冻结的 phase-1 Adjust 配置在 `benchmark/pilot_adjust_config.yaml`，严格 loader 为 `benchmark/pilot_adjust_config.py`：timeout `300` 秒，单次 Adjust attempt 预算 `$1.50`，估算上限保持 low `$0.10`、medium `$0.25`、high `$1.00`；受影响任务严格为 `task_003`、`task_004`、`task_005`、`task_006`、`task_008`。新结果只能写入 `benchmark/results/adjust_runs.jsonl` 与 `adjust_artifacts/` 等新路径。
+
+`benchmark/pilot_adjust.py` 目前只支持只读 preflight：它要求原始 Pilot slot 完整且 decision 为 `adjust`，只接受上述五个任务，并且默认不执行任务、不调用 Provider/JEV、不读凭据、不写结果。当前 phase 不包含 UI、数据库、Web server 或 Agent Adapter。PILOT_ADJUST_GATE Phase 1 已经总顾问与独立审核通过；下一道 Gate 是 `PILOT_ADJUST_EXECUTION_GATE`，负责为五个受影响任务建立显式授权、独立 Adjust 结果/Artifacts 和安全重跑顺序。真实 Adjust rerun 尚未执行。
