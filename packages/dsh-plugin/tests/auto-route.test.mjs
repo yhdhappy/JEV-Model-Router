@@ -64,6 +64,9 @@ function settings(overrides = {}) {
     safeDefault: { provider: 'opencode-go', model: 'gpt-5.6-luna' },
     unmatchedTaskType: 'capability_only',
     lightRules: true,
+    budgetLimit: null,
+    estimatedMaxCosts: { low: 0.1, medium: 0.25, high: 1.0 },
+    budgetMaxTurns: 64,
     cacheSize: 8,
     autoRoute: true,
     timeoutMs: 1000,
@@ -93,7 +96,7 @@ function stubClassifier(calls, classifier = {}) {
         input_tokens: 100,
         output_tokens: 50,
         latency_ms: 12,
-        exact_cost: 0.0000042,
+        exact_cost: 0.000004,
       },
       answer_confidences: { task_type: 0.9, difficulty_score: 0.6 },
     }
@@ -469,7 +472,7 @@ test('the safe-default path still records what JEV cost', async () => {
   )
 
   assert.equal(records[0].route_source, 'safe_default')
-  assert.equal(records[0].jev_cost, 0.0000042, 'the classifier ran, so its cost must be recorded')
+  assert.equal(records[0].jev_cost, 0.000004, 'the classifier ran, so its cost must be recorded')
   assert.equal(records[0].jev_latency_ms, 12)
   assert.ok(records[0].classifier)
   assert.ok(records[0].answer_confidences)
@@ -584,4 +587,276 @@ test('a request with no user text uses the safe default without classifying', as
 
   assert.equal(calls.count, 0)
   assert.equal(ctx.captured.streams[0].model, 'gpt-5.6-luna')
+})
+
+// ── Budget Guard integration ──────────────────────────────────────────────
+// These prove spending is prevented, not merely recorded: the assertion that
+// matters is that `ctx.captured.streams` stays empty when a call is blocked.
+
+test('budget: a null limit leaves routing unaffected', async () => {
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(ctx, settings({ budgetLimit: null }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'b1', messages: userTurn('fix a bug') },
+      () => {},
+    ),
+  )
+
+  assert.equal(ctx.captured.streams.length, 1)
+  assert.equal(records[0].budget_limit, null)
+  assert.equal(records[0].budget_allowed, true)
+})
+
+test('budget: JEV cost plus a medium estimate inside the limit is allowed', async () => {
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(ctx, settings({ budgetLimit: 1.5 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'b2', messages: userTurn('fix a bug') },
+      () => {},
+    ),
+  )
+
+  assert.equal(ctx.captured.streams.length, 1, 'the provider is called')
+  assert.equal(records[0].budget_allowed, true)
+  assert.equal(records[0].estimated_next_max_cost, 0.25)
+  assert.equal(records[0].cost_estimated, true)
+  assert.equal(records[0].cost_estimation_source, 'estimated_max')
+})
+
+test('budget: a high estimate that would exceed the limit blocks the call', async () => {
+  const ctx = fakeContext()
+  const records = []
+  // capability high -> estimate 1.00; limit 0.5 cannot fit it.
+  registerAutoRoute(ctx, settings({ budgetLimit: 0.5 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }, { required_capability: 'high' }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  const chunks = await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'b3', messages: userTurn('hard task') },
+      () => {},
+    ),
+  )
+
+  assert.equal(ctx.captured.streams.length, 0, 'THE PROVIDER MUST NOT BE CALLED')
+  assert.equal(records[0].budget_allowed, false)
+  assert.equal(records[0].budget_error, 'budget_limit_reached')
+  assert.equal(chunks.length, 1)
+  assert.equal(chunks[0].type, 'finish')
+  assert.equal(chunks[0].reason.kind, 'error')
+  assert.equal(chunks[0].reason.failure.code, 'budget_limit_reached')
+})
+
+test('budget: a blocked call never silently swaps to a cheaper model', async () => {
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(ctx, settings({ budgetLimit: 0.5 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }, { required_capability: 'high' }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'b4', messages: userTurn('hard task') },
+      () => {},
+    ),
+  )
+
+  // Nothing was called at all: no downgrade, no retry, no substitute route.
+  assert.equal(ctx.captured.streams.length, 0)
+  assert.equal(records.length, 1, 'exactly one decision is recorded')
+  assert.equal(records[0].model, 'gpt-5.6-luna', 'the chosen model is still reported honestly')
+})
+
+test('budget: the light-rule path costs nothing to classify but is still guarded', async () => {
+  const ctx = fakeContext()
+  const records = []
+  const calls = { count: 0 }
+  registerAutoRoute(ctx, settings({ budgetLimit: 0.5 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier(calls),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'b5', messages: userTurn('read README.md') },
+      () => {},
+    ),
+  )
+
+  assert.equal(calls.count, 0, 'no classifier call on the light path')
+  assert.equal(records[0].jev_cost, null)
+  assert.equal(records[0].jev_called, false)
+  assert.equal(records[0].budget_exposure_before, 0, 'classification added no exposure')
+  // The synthetic classifier is file_operation/low, so the estimate is 0.10
+  // and fits inside 0.50.
+  assert.equal(records[0].budget_allowed, true)
+  assert.equal(ctx.captured.streams.length, 1)
+})
+
+test('budget: the guard still applies on the safe-default path', async () => {
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(
+    ctx,
+    settings({ budgetLimit: 0.5, safeDefault: { provider: 'opencode-go', model: 'gpt-5.6-luna' } }),
+    {
+      log: ctx.logger,
+      recordDecision: async (path, record) => records.push(record),
+      classify: async () => {
+        throw new Error('jev is down')
+      },
+    },
+  )
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'b6', messages: userTurn('anything') },
+      () => {},
+    ),
+  )
+
+  // safeDefault is gpt-5.6-luna (high), estimate 1.00, limit 0.50 -> blocked.
+  assert.equal(records[0].route_source, 'safe_default')
+  assert.equal(ctx.captured.streams.length, 0, 'a safe default may not bypass the budget')
+  assert.equal(records[0].budget_error, 'budget_limit_reached')
+})
+
+test('budget: exposure accumulates across the tool round-trips of one turn', async () => {
+  const ctx = fakeContext()
+  const records = []
+  // A medium route estimates 0.25 per call. With a 0.60 limit: step 1 starts at
+  // 0 exposure (plus the one-off classifier cost), step 2 starts at 0.25, and
+  // step 3 starts at 0.50 plus its own 0.25 == 0.75 > 0.60, so step 3 is blocked.
+  registerAutoRoute(ctx, settings({ budgetLimit: 0.6 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  const call = (messages) =>
+    drain(
+      listener.listener(
+        { provider: 'jev-router', model: 'auto', sessionId: 'b7', messages },
+        () => {},
+      ),
+    )
+
+  await call(userTurn('multi step task'))
+  await call(toolStep())
+
+  assert.equal(records[0].budget_exposure_before, 0.000004, 'only the classifier cost at first')
+  assert.ok(records[0].budget_allowed)
+  assert.equal(records[1].budget_exposure_before, 0.250004, 'the second step sees the first')
+  assert.ok(records[1].budget_allowed)
+  assert.equal(ctx.captured.streams.length, 2)
+
+  // The third step cannot fit its own estimate, so the provider is never called.
+  await call(toolStep())
+  assert.equal(records[2].budget_exposure_before, 0.500004)
+  assert.equal(records[2].budget_allowed, false)
+  assert.equal(records[2].budget_error, 'budget_limit_reached')
+  assert.equal(
+    ctx.captured.streams.length,
+    2,
+    'the blocked step did not reach the provider',
+  )
+})
+
+test('budget: a new user turn starts a fresh account', async () => {
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(ctx, settings({ budgetLimit: 0.3 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  const call = (messages) =>
+    drain(
+      listener.listener(
+        { provider: 'jev-router', model: 'auto', sessionId: 'b8', messages },
+        () => {},
+      ),
+    )
+
+  await call(userTurn('first task'))
+  await call(toolStep())
+  const blockedCount = ctx.captured.streams.length
+
+  // A new user message opens a new turn with a fresh account.
+  await call(userTurn('a completely different task'))
+
+  assert.ok(blockedCount <= 2)
+  assert.equal(records[records.length - 1].budget_exposure_before, 0.000004)
+  assert.equal(
+    ctx.captured.streams.length,
+    blockedCount + 1,
+    'the new turn is allowed again',
+  )
+})
+
+test('budget: parent, child and sibling sessions keep separate accounts', async () => {
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(ctx, settings({ budgetLimit: 0.3 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  const call = (sessionId, messages) =>
+    drain(
+      listener.listener(
+        { provider: 'jev-router', model: 'auto', sessionId, messages },
+        () => {},
+      ),
+    )
+
+  await call('parent', userTurn('delegate some work'))
+  await call('parent', toolStep())
+  const afterParent = records.length
+
+  // A child agent has its own session and must not inherit the parent's spend.
+  await call('child-1', userTurn('a small subtask'))
+  assert.equal(
+    records[afterParent].budget_exposure_before,
+    0.000004,
+    'the child starts from zero',
+  )
+  assert.equal(records[afterParent].budget_allowed, true)
+
+  await call('child-2', userTurn('another subtask'))
+  assert.equal(
+    records[afterParent + 1].budget_exposure_before,
+    0.000004,
+    'a sibling also starts from zero',
+  )
 })

@@ -26,6 +26,7 @@ import { JevError, classifyJev } from './jev/classifier.js'
 import { AUTO_PROVIDER, DEFAULT_MODELS } from './jev/models.js'
 import { NoEligibleModelError, decideRouteForSettings } from './jev/policy.js'
 import { registerAutoRoute } from './llm/auto-route.js'
+import { DEFAULT_ESTIMATED_MAX_COSTS } from './llm/budget.js'
 
 /** Cordis plugin name. */
 export const name = 'jev-router'
@@ -264,10 +265,43 @@ export function resolveSettings(config) {
     unmatchedTaskType,
     // The lightweight layer answers allowlisted trivial tasks without JEV.
     lightRules: raw.lightRules !== false,
+    // null means no per-turn ceiling. A number must be finite and >= 0.
+    budgetLimit:
+      typeof raw.budgetLimit === 'number' &&
+      Number.isFinite(raw.budgetLimit) &&
+      raw.budgetLimit >= 0
+        ? raw.budgetLimit
+        : null,
+    estimatedMaxCosts: resolveEstimatedMaxCosts(raw.estimatedMaxCosts),
+    budgetMaxTurns:
+      Number.isInteger(raw.budgetMaxTurns) && raw.budgetMaxTurns > 0
+        ? raw.budgetMaxTurns
+        : 64,
     cacheSize,
     autoRoute: raw.autoRoute !== false,
     timeoutMs,
   }
+}
+
+/**
+ * Resolve the per-tier estimated maximum costs.
+ *
+ * The frozen Pilot numbers are the default and are not replaced by a second
+ * set of figures; a partial override only fills in the tiers it names.
+ *
+ * @param configured - the raw `estimatedMaxCosts` config value.
+ * @returns the tier-to-cost table.
+ */
+function resolveEstimatedMaxCosts(configured) {
+  const resolved = { ...DEFAULT_ESTIMATED_MAX_COSTS }
+  if (typeof configured !== 'object' || configured === null) return resolved
+  for (const tier of ['low', 'medium', 'high']) {
+    const value = configured[tier]
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+      resolved[tier] = value
+    }
+  }
+  return resolved
 }
 
 /**

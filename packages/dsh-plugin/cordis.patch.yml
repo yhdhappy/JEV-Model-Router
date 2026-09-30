@@ -33,6 +33,13 @@
         # classifier's ~750ms latency and its cost for those turns.
         # Set false to send every task through JEV.
         lightRules: true
+        # Per-turn spend ceiling in USD. null / omitted disables the guard.
+        # 1.50 is this machine's current setting, NOT a frozen protocol
+        # constant. A call is allowed only when
+        # current_exposure + estimated_next_max_cost <= budgetLimit;
+        # equality is allowed. A call that would exceed it is not made at all —
+        # the guard never swaps to a cheaper model to fit.
+        budgetLimit: 1.50
         # Model used when JEV cannot decide. Never the cheapest tier.
         safeDefault:
           provider: 'opencode-go'

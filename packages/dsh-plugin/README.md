@@ -143,6 +143,33 @@ deepseek 适配器在不匹配时直接抛 `INVALID_REPLAY_STATE`，风险高于
 命中时决策日志会记为 `route_source: "light_rule"`、`rule_id: "simple_file_read"`、
 `jev_called: false`。可用 `lightRules: false` 关掉整层。
 
+### 预算守卫（已实现）
+
+`lib/llm/budget.js` 是 `src/jev_router/fallback.py::check_budget` 的镜像，语义完全一致：
+
+```text
+当前已累计 + 下一次估算上限 <= 预算上限   → 允许
+相等                                       → 允许
+超出                                       → 阻止调用
+```
+
+**关键点：**
+
+- 它是**阻止花钱**的机制，不是记账。被拦下时**根本不调用 Provider**——
+  在 `llm/stream` 瀑布里直接返回一个终结错误块，不调 `next()`，所以请求从未发出。
+- **绝不偷偷换成便宜模型**。选中的模型超预算就不调用，如实记录 `budget_limit_reached`。
+- **一轮一账**。DSH 一轮对话包含多次模型调用（工具往返），所以预算在**同一用户轮次内持续累计**；
+  新用户消息开新账。
+- **父子隔离**。父 Agent、子 Agent、兄弟 session 各自独立记账，不串账。
+- **safe default 也要过预算**。JEV 失败可以走保底模型，但保底模型不能因为是"保底"就绕过上限。
+- **分类器的钱只算一次**。同一轮后续步骤复用已选路由，不会重复计费。
+
+成本来源明确区分：模型调用前用配置的保守估算上限（`cost_estimation_source: "estimated_max"`），
+**不把估算冒充真实成本**。JEV 用的是它自己返回的精确成本。
+
+决策日志新增字段：`budget_limit`、`budget_exposure_before`、`estimated_next_max_cost`、
+`budget_allowed`、`budget_error`、`cost_estimated`、`cost_estimation_source`。
+
 ### 这一版**还没有**的东西
 
 - **没有模型 fallback 链**：一轮内换模型在流式输出开始后不是安全的本地决策，本版交给 DSH 已有的重试机制处理。
@@ -176,6 +203,9 @@ profile 的 `package.json` / `cordis.patch.yml`，也不要手工跑 pnpm ——
 | `autoRoute` | `true` | 设为 `false` 则**完全不注册**"自动选择" |
 | `unmatchedTaskType` | `capability_only` | JEV 返回没有模型声明的任务类型（例如 `other`）时的策略：`capability_only` 放宽任务类型过滤、保留能力下限；`safe_default` 直接走保底模型 |
 | `lightRules` | `true` | 白名单轻量规则：命中的简单只读任务**不调用 JEV**。设 `false` 则全部交给 JEV |
+| `budgetLimit` | `null`（不限制） | 单个用户轮次的费用上限（美元）。`null` 表示不启用。当前本机设为 `1.50` |
+| `estimatedMaxCosts` | `low 0.10 / medium 0.25 / high 1.00` | 各能力档的保守估算上限，沿用冻结 Pilot 的数字 |
+| `budgetMaxTurns` | `64` | 预算账本保留的轮次数，超出后淘汰最旧的 |
 | `safeDefault` | `opencode-go / gpt-5.6-luna` | JEV 失败或无可选模型时使用的模型 |
 | `cacheSize` | `32` | 任务文本判定结果的有界缓存条数 |
 | `models` | 见 `lib/jev/models.js` | 可覆盖的模型表（名称/provider/模型 id/能力档/任务类型/价格/启用） |

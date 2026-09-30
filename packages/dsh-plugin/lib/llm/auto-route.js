@@ -53,6 +53,13 @@ import { JevError, classifyJev } from '../jev/classifier.js'
 import { NoEligibleModelError, decideRouteForSettings } from '../jev/policy.js'
 import { classifierFromRule, evaluateLightweightRules } from '../jev/rules.js'
 import {
+  BUDGET_LIMIT_REACHED,
+  BudgetLedger,
+  checkBudget,
+  estimateMaxCost,
+  turnKey,
+} from './budget.js'
+import {
   AUTO_CONTEXT_WINDOW,
   AUTO_MODEL,
   AUTO_MODEL_NAME,
@@ -107,6 +114,7 @@ export function registerAutoRoute(ctx, settings, deps) {
   const state = {
     heldRoutes: new Map(),
     cache: new Map(),
+    budget: new BudgetLedger({ maxTurns: settings.budgetMaxTurns }),
   }
 
   const adapter = {
@@ -198,6 +206,12 @@ async function* routeStream(ctx, options, settings, state, deps, origin) {
     }
   }
 
+  // Budget Guard sits on the last boundary before dispatch. Returning here
+  // without calling `next()` means the provider request is never made, which is
+  // what makes this a spending-prevention mechanism rather than an accounting
+  // one. The classifier's own cost is charged to the same turn account.
+  const guard = applyBudgetGuard(options, settings, state, decision)
+
   const forwarded = { ...options, provider: decision.provider, model: decision.model }
   if (forwarded.reasoningEffort === undefined) delete forwarded.reasoningEffort
 
@@ -223,9 +237,108 @@ async function* routeStream(ctx, options, settings, state, deps, origin) {
     jev_latency_ms: decision.jevLatencyMs ?? null,
     reason: decision.reason ?? [],
     error: decision.error ?? null,
+    ...guard.record,
   })
 
+  if (!guard.allowed) {
+    // The provider must not be called. Emit one terminal error chunk, the same
+    // shape the runtime itself uses for a refused call, and stop.
+    yield {
+      type: 'finish',
+      reason: {
+        kind: 'error',
+        failure: {
+          code: BUDGET_LIMIT_REACHED,
+          message: `预算上限已达到：本次已累计 $${guard.record.budget_exposure_before}，` +
+            `下一模型预计最高 $${guard.record.estimated_next_max_cost}，` +
+            `上限 $${guard.record.budget_limit}`,
+        },
+      },
+    }
+    return
+  }
+
   yield* ctx.llm.stream(forwarded)
+}
+
+/**
+ * Evaluate the per-turn budget for the model about to be called.
+ *
+ * @param options - the original call options.
+ * @param settings - resolved plugin settings.
+ * @param state - per-fiber turn state.
+ * @param decision - the resolved route.
+ * @returns `{ allowed, record, turnKey }`.
+ */
+function applyBudgetGuard(options, settings, state, decision) {
+  const limit = settings.budgetLimit
+  const capability = capabilityOf(settings.models, decision.provider, decision.model)
+  const estimated = capability === null
+    ? 0
+    : estimateMaxCost(capability, settings.estimatedMaxCosts)
+
+  const record = {
+    budget_limit: limit,
+    budget_exposure_before: null,
+    estimated_next_max_cost: estimated,
+    budget_allowed: true,
+    budget_error: null,
+    // Estimated by construction: a provider's real cost is only known after it
+    // answers, so the guard must reason from the configured ceiling.
+    cost_estimated: true,
+    cost_estimation_source: 'estimated_max',
+    budget_turn_key: null,
+  }
+
+  if (limit === null || limit === undefined) {
+    record.cost_estimated = false
+    record.cost_estimation_source = null
+    return { allowed: true, record, turnKey: null }
+  }
+
+  const key = turnKey(options?.sessionId, decision.turnText ?? '')
+  const turn = state.budget.peek(key) ?? state.budget.openTurn(key)
+
+  // The classifier is paid for once per turn, on the step that actually
+  // classified. Later steps of the same turn reuse the held route, so charging
+  // `jevCost` again would invent spend that never happened.
+  const classifierCharge = decision.reused === true ? 0 : (decision.jevCost ?? 0)
+  const exposure = turn.spent + classifierCharge
+
+  const verdict = checkBudget(exposure, estimated, limit)
+  record.budget_exposure_before = verdict.current_accumulated_cost
+  record.budget_allowed = verdict.allowed
+  record.budget_error = verdict.error_code
+  record.budget_turn_key = key
+
+  if (!verdict.allowed) return { allowed: false, record, turnKey: key }
+
+  // Commit this call's ceiling into the turn account before dispatch, so a
+  // later step of the same turn sees it. The provider's real cost replaces the
+  // estimate after a successful call.
+  state.budget.charge(key, {
+    classifier: classifierCharge,
+    execution: estimated,
+    source: 'estimated_max',
+  })
+  record.budget_exposure_after = turn.spent
+  record.budget_classifier_charge = classifierCharge
+  return { allowed: true, record, turnKey: key }
+}
+
+/**
+ * Resolve the capability tier of one configured route.
+ *
+ * @param models - configured model entries.
+ * @param provider - the route provider.
+ * @param model - the route model id.
+ * @returns the tier, or null when the route is not configured.
+ */
+function capabilityOf(models, provider, model) {
+  const entry = models.find(
+    (candidate) => candidate.provider === provider && candidate.model === model,
+  )
+  return entry === undefined ? null : entry.capability
 }
 
 /**
@@ -293,13 +406,18 @@ async function resolveRoute(options, settings, state, deps) {
   // of the turn too. Not holding it made every later step of the turn re-decide
   // (observed in the field as repeated `reused: false` records).
   const safeDefault = (extra) =>
-    hold(state, sessionId, {
-      source: 'safe_default',
-      provider: settings.safeDefault.provider,
-      model: settings.safeDefault.model,
-      ...carried,
-      ...extra,
-    })
+    hold(
+      state,
+      sessionId,
+      {
+        source: 'safe_default',
+        provider: settings.safeDefault.provider,
+        model: settings.safeDefault.model,
+        ...carried,
+        ...extra,
+      },
+      task,
+    )
 
   let policy
   try {
@@ -314,15 +432,20 @@ async function resolveRoute(options, settings, state, deps) {
     return safeDefault({ reason: [error.message], error: 'no_eligible_model' })
   }
 
-  return hold(state, sessionId, {
-    source: rule.matched ? 'light_rule' : 'jev',
-    provider: policy.primary.provider,
-    model: policy.primary.model,
-    ...carried,
-    reason: rule.matched ? [rule.reason, ...policy.reason] : policy.reason,
-    relaxedTaskType: policy.relaxed === true,
-    fallback: policy.fallbacks.map((entry) => `${entry.provider}/${entry.model}`),
-  })
+  return hold(
+    state,
+    sessionId,
+    {
+      source: rule.matched ? 'light_rule' : 'jev',
+      provider: policy.primary.provider,
+      model: policy.primary.model,
+      ...carried,
+      reason: rule.matched ? [rule.reason, ...policy.reason] : policy.reason,
+      relaxedTaskType: policy.relaxed === true,
+      fallback: policy.fallbacks.map((entry) => `${entry.provider}/${entry.model}`),
+    },
+    task,
+  )
 }
 
 /**
@@ -337,9 +460,10 @@ async function resolveRoute(options, settings, state, deps) {
  * @param decision - the decision to remember.
  * @returns the same decision, for convenient returning.
  */
-function hold(state, sessionId, decision) {
-  if (sessionId !== undefined) state.heldRoutes.set(sessionId, decision)
-  return decision
+function hold(state, sessionId, decision, turnText = '') {
+  const held = turnText.length > 0 ? { ...decision, turnText } : decision
+  if (sessionId !== undefined) state.heldRoutes.set(sessionId, held)
+  return held
 }
 
 /**
