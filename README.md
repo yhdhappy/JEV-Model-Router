@@ -180,3 +180,6 @@ task_005 attempt=1 已复核：Baseline=manual_failed（artifact 测试文件存
 
 
 task_005 attempt=2 已复核：Baseline=manual_failed（provider_error）；Router=manual_failed（JEV network error，safe-default 未完成）；本轮无有效 JEV classifier，audit=not_applicable。冻结策略仍允许一次 `unexpected_fallback` repeat，因此进入最后一次 attempt=3。
+
+
+task_005 已完成全部允许 repeat：attempt=3 Baseline=manual_failed（同一测试文件仍有 SyntaxError），Router=manual_failed；JEV audit=reasonable，confidence=0.49、difficulty_score=5。冻结策略允许的 2 次额外运行已耗尽，不再允许 attempt=4；当前进入 task_006。
