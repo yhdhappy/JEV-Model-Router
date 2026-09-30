@@ -210,3 +210,6 @@ task_007 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Route
 ### task_008 repeat 状态
 
 task_008 attempt=1 已复核：Baseline=manual_passed（旧 evidence redactor 破坏测试 artifact，但 production diff 已独立验证：41 项现有测试全过，safe-default/fallback/normal 三场景语义 probe 通过）；Router=manual_failed（`medium_model provider_timeout → high_model budget_limit_reached`）；JEV audit=reasonable，confidence=0.26、difficulty_score=4。冻结 repeat 条件 `jev_confidence_below`、`difficulty_score_near_bucket_boundary`、`unexpected_fallback` 已触发，当前进入 attempt=2。
+
+
+task_008 attempt=2 已复核：Baseline=manual_passed（原始 41 项 logging/Router 测试全过，safe-default/fallback/failed-fallback/normal 路由语义 probe 全过）；Router=manual_failed（`medium_model provider_timeout → high_model budget_limit_reached`）；JEV audit=reasonable，confidence=0.31、difficulty_score=4。冻结 repeat 条件仍满足，因此允许最后一次 attempt=3。

@@ -354,18 +354,30 @@
           "difficulty_score_near_bucket_boundary",
           "unexpected_fallback"
         ],
-        "repeat_reason": "attempt_1_low_confidence_boundary_and_unexpected_fallback"
+        "repeat_reason": "attempt_2_low_confidence_boundary_and_unexpected_fallback",
+        "attempt_2": {
+          "baseline_acceptance": "manual_passed",
+          "router_acceptance": "manual_failed",
+          "router_execution_status": "failed",
+          "jev_assessment": "reasonable",
+          "baseline_validation": "original_tests_41_pass_and_semantic_probe_pass",
+          "router_error_codes": [
+            "provider_timeout",
+            "budget_limit_reached"
+          ]
+        }
       }
     },
     "repeat_gate": {
       "status": "passed",
       "task_id": "task_008",
-      "next_attempt": 2,
+      "next_attempt": 3,
       "authorized_triggers": [
         "jev_confidence_below",
         "difficulty_score_near_bucket_boundary",
         "unexpected_fallback"
-      ]
+      ],
+      "attempt_3_is_final_allowed_repeat": true
     }
   }
 }
