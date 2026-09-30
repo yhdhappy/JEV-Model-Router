@@ -23,7 +23,7 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_OFFICIAL_EXECUTION",
+  "current_task": "PILOT_REPEAT_GATE",
   "status": "official_pilot_running",
   "retry_count": 0,
   "stop_reason": null,
@@ -64,7 +64,7 @@
       "task_010_fallback"
     ],
     "current_task": "task_004",
-    "execution_gate": "official_pilot_in_progress",
+    "execution_gate": "official_repeat_required",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": true,
     "real_provider_gate": {
@@ -121,8 +121,8 @@
         "task_002",
         "task_003"
       ],
-      "last_reviewed_task": "task_003",
-      "next_task": "task_004",
+      "last_reviewed_task": "task_004",
+      "next_task": "task_004_repeat",
       "task_001": {
         "baseline_acceptance": "manual_passed",
         "router_acceptance": "manual_failed",
@@ -171,16 +171,38 @@
           ]
         },
         "repeat_exhausted": true
+      },
+      "task_004": {
+        "attempt_1": {
+          "baseline_acceptance": "manual_passed",
+          "router_acceptance": "manual_failed",
+          "router_execution_status": "failed",
+          "jev_assessment": "reasonable",
+          "router_error_codes": [
+            "provider_timeout",
+            "budget_limit_reached"
+          ]
+        },
+        "repeat_triggered": true,
+        "repeat_triggers": [
+          "jev_confidence_below",
+          "difficulty_score_near_bucket_boundary",
+          "unexpected_fallback"
+        ],
+        "repeat_reason": "attempt_1_low_confidence_boundary_and_unexpected_fallback"
       }
     },
     "repeat_gate": {
-      "status": "completed",
-      "task_id": "task_003",
-      "attempts_completed": [
-        2,
-        3
+      "status": "passed",
+      "task_id": "task_004",
+      "next_attempt": 2,
+      "authorized_triggers": [
+        "jev_confidence_below",
+        "difficulty_score_near_bucket_boundary",
+        "unexpected_fallback"
       ],
-      "max_extra_runs_exhausted": true
+      "advisor_review": "inherited_from_generic_repeat_gate",
+      "independent_review": "inherited_from_generic_repeat_gate"
     }
   }
 }

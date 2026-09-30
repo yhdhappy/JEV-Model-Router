@@ -161,3 +161,8 @@ task_003 已完成全部允许的 repeat：attempt=2 与 attempt=3 均已复核�
 ## 当前交接边界
 
 T-15、10 个 Pilot 任务准备、真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已完成。真实 Pilot 尚未开始。当前 `PILOT_OFFICIAL_EXECUTION_GATE` 及 evidence/manual-review subgate 已通过总顾问与独立审核。下一步为 `task_001` 单任务显式授权与真实执行；在获得真实 Pilot 数据前不作 Go / Adjust / Stop 判断。
+
+
+### task_004 repeat 状态
+
+task_004 attempt=1 已完成复核：Baseline=manual_passed；Router=manual_failed（`medium_model provider_timeout → high_model budget_limit_reached`）；JEV audit=reasonable，confidence=0.23、difficulty_score=4。冻结 repeat 条件 `jev_confidence_below`、`difficulty_score_near_bucket_boundary` 与 `unexpected_fallback` 已触发，当前进入 task_004 attempt=2。
