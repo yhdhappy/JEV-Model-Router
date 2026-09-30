@@ -23,7 +23,7 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_OFFICIAL_EXECUTION",
+  "current_task": "PILOT_REPEAT_GATE",
   "status": "official_pilot_running",
   "retry_count": 0,
   "stop_reason": null,
@@ -64,7 +64,7 @@
       "task_010_fallback"
     ],
     "current_task": "task_007",
-    "execution_gate": "official_pilot_in_progress",
+    "execution_gate": "official_repeat_required",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": true,
     "real_provider_gate": {
@@ -124,8 +124,8 @@
         "task_005",
         "task_006"
       ],
-      "last_reviewed_task": "task_006",
-      "next_task": "task_007",
+      "last_reviewed_task": "task_007",
+      "next_task": "task_007_repeat",
       "task_001": {
         "baseline_acceptance": "manual_passed",
         "router_acceptance": "manual_failed",
@@ -297,16 +297,31 @@
           ]
         },
         "repeat_exhausted": true
+      },
+      "task_007": {
+        "attempt_1": {
+          "baseline_acceptance": "manual_passed",
+          "router_acceptance": "manual_passed",
+          "router_execution_status": "success",
+          "jev_assessment": "reasonable",
+          "router_selected_model": "high_model",
+          "router_total_production_cost": 0.018200306,
+          "baseline_total_production_cost": 0.027109560000000005
+        },
+        "repeat_triggered": true,
+        "repeat_triggers": [
+          "jev_confidence_below"
+        ],
+        "repeat_reason": "attempt_1_low_confidence"
       }
     },
     "repeat_gate": {
-      "status": "completed",
-      "task_id": "task_006",
-      "attempts_completed": [
-        2,
-        3
-      ],
-      "max_extra_runs_exhausted": true
+      "status": "passed",
+      "task_id": "task_007",
+      "next_attempt": 2,
+      "authorized_triggers": [
+        "jev_confidence_below"
+      ]
     }
   }
 }
