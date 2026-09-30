@@ -153,7 +153,16 @@
         "repeat_reason": "attempt_1_router_failed_without_usable_execution_cost_outcome"
       }
     },
-    "blocked_at": "task_003_preflight",
-    "blocked_reason": "jev_api_key_file_required"
+    "repeat_gate": {
+      "status": "passed",
+      "task_id": "task_003",
+      "next_attempt": 2,
+      "authorized_triggers": [
+        "jev_confidence_below",
+        "difficulty_score_near_bucket_boundary"
+      ],
+      "advisor_review": "passed",
+      "independent_review": "passed"
+    }
   }
 }

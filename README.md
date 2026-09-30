@@ -156,6 +156,8 @@ task_001 已完成官方 first attempt 与人工复核：Baseline=manual_passed�
 
 task_003 attempt=1 已完成复核：Baseline=manual_failed（新增测试硬编码错误）；Router artifact=manual_passed，但官方执行 status=failed（medium provider_timeout，high fallback 被 Budget Guard 拦截）；JEV audit=reasonable，confidence=0.48、difficulty_score=4。冻结 repeat 条件已触发，当前进入受控 repeat Gate，不进入 task_004，也不覆盖 attempt=1。
 
+task_003 的 OFFICIAL repeat gate 已经总顾问与独立审核通过；当前允许使用冻结的两条客观触发条件 `jev_confidence_below` 与 `difficulty_score_near_bucket_boundary` 执行 attempt=2。attempt=1 的 JSONL/artifacts 保持不变，attempt=2 尚未执行。
+
 ## 当前交接边界
 
 T-15、10 个 Pilot 任务准备、真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已完成。真实 Pilot 尚未开始。当前 `PILOT_OFFICIAL_EXECUTION_GATE` 及 evidence/manual-review subgate 已通过总顾问与独立审核。下一步为 `task_001` 单任务显式授权与真实执行；在获得真实 Pilot 数据前不作 Go / Adjust / Stop 判断。

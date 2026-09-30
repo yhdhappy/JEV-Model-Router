@@ -32,7 +32,15 @@ def _preflight(monkeypatch, tmp_path, task_id, records=(), key=True, phase="A", 
     else:
         monkeypatch.delenv("JEV_API_KEY_FILE", raising=False)
     workflow_state_path = ROOT / "orchestration" / "workflow_state.json"
-    if phase == "B" or workflow_overrides:
+    if phase == "A" and not workflow_overrides:
+        state = json.loads(workflow_state_path.read_text(encoding="utf-8"))
+        state["status"] = "pilot_config_frozen"
+        state["current_task"] = "PILOT_OFFICIAL_EXECUTION_GATE"
+        state["pilot_preparation"]["execution_gate"] = "official_execution_mode_required"
+        state["pilot_preparation"]["real_pilot_started"] = False
+        workflow_state_path = tmp_path / "workflow_state.json"
+        workflow_state_path.write_text(json.dumps(state), encoding="utf-8")
+    elif phase == "B" or workflow_overrides:
         state = json.loads(workflow_state_path.read_text(encoding="utf-8"))
         if phase == "B":
             state["status"] = "official_pilot_running"
@@ -238,10 +246,9 @@ def test_atomic_pair_failure_leaves_existing_state_without_one_new_line(monkeypa
         raise OSError("injected replace failure")
 
     monkeypatch.setattr(official.os, "replace", fail_replace)
-    with pytest.raises(official.OfficialPilotGateError, match="official_pair_replace_failed"):
-        official.persist_official_pair(
-            official._issue_official_authorization(), preflight, baseline, router
-        )
+    expected_error = "incomplete_official_pair" if existing else "official_pair_replace_failed"
+    with pytest.raises(official.OfficialPilotGateError, match=expected_error):
+        official.persist_official_pair(official._issue_official_authorization(), preflight, baseline, router)
     if before:
         assert preflight.results_path.read_bytes() == before
     else:

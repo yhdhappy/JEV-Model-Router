@@ -50,6 +50,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_WORKFLOW_STATE_PATH = PROJECT_ROOT / "orchestration" / "workflow_state.json"
 DEFAULT_FIXTURE_ROOT = PROJECT_ROOT / "benchmark" / "fixtures"
 CONFIRMATION_TEXT = "OFFICIAL_PILOT_ONE_TASK"
+REPEAT_CONFIRMATION_TEXT = "OFFICIAL_PILOT_REPEAT_ONE_TASK"
 MANUAL_REVIEW_CONFIRMATION_TEXT = "OFFICIAL_PILOT_MANUAL_REVIEW"
 JEV_AUDIT_REVIEW_CONFIRMATION_TEXT = "OFFICIAL_PILOT_JEV_REVIEW"
 _AUTH_TOKEN = object()
@@ -107,6 +108,9 @@ class OfficialPreflight:
     artifacts_dir: Path
     acceptance_mode: str
     _proof: object
+    attempt: int = 1
+    repeat_triggers: Tuple[str, ...] = ()
+    repeat_authorization_timestamp_utc: Optional[str] = None
 
     def sanitized_summary(self) -> Dict[str, Any]:
         return {
@@ -117,6 +121,8 @@ class OfficialPreflight:
             "requires_jev_api_key": self.requires_jev_api_key,
             "source_fixture_hash": self.source_fixture_hash,
             "config_schema_version": self.config_schema_version,
+            "attempt": self.attempt,
+            "repeat_triggers": list(self.repeat_triggers),
         }
 
 
@@ -151,7 +157,7 @@ def preflight_official_task(
         if supplied != official_results_path:
             raise OfficialPilotGateError("results path does not match frozen config", error_code="results_path_mismatch")
 
-    records = _read_official_records(official_results_path)
+    records = _read_official_records(official_results_path, config=config)
     _validate_phase_results(workflow_phase, records, config)
     if task_id == EXPECTED_REAL_TASK_IDS[0] and workflow_phase != "before_first_official_run":
         raise OfficialPilotGateError(
@@ -168,7 +174,7 @@ def preflight_official_task(
             "official evidence artifact already exists",
             error_code="artifact_orphan_or_duplicate",
         )
-    if _task_has_complete_pair(records, task_id):
+    if _task_has_complete_pair(records, task_id, attempt=1):
         raise OfficialPilotGateError(
             "task already has a completed official first-attempt pair",
             error_code="duplicate_official_record",
@@ -212,6 +218,241 @@ def preflight_official_task(
     )
 
 
+def preflight_official_repeat(
+    task_id: str,
+    triggers: Union[str, Sequence[str]],
+    *,
+    attempt: Optional[int] = None,
+    config_path: Union[str, Path] = DEFAULT_CONFIG_PATH,
+    workflow_state_path: Union[str, Path] = DEFAULT_WORKFLOW_STATE_PATH,
+    registry_path: Union[str, Path] = DEFAULT_MODEL_REGISTRY_PATH,
+    fixture_root: Union[str, Path] = DEFAULT_FIXTURE_ROOT,
+    results_path: Optional[Union[str, Path]] = None,
+) -> OfficialPreflight:
+    """Validate one frozen, advisor-authorized repeat without side effects."""
+
+    if task_id not in EXPECTED_REAL_TASK_IDS:
+        raise OfficialPilotGateError(
+            "official repeats are limited to real Pilot tasks",
+            error_code="repeat_task_invalid",
+        )
+    normalized_triggers = _normalize_repeat_triggers(triggers)
+    try:
+        config = load_pilot_config(config_path, model_registry_path=registry_path)
+    except Exception as exc:
+        raise OfficialPilotGateError(
+            "pilot config or registry is not loadable",
+            error_code="pilot_config_unloadable",
+        ) from exc
+
+    _validate_repeat_workflow_state(workflow_state_path, task_id)
+    outputs = _validate_output_paths(config)
+    official_results_path = outputs["official_results_path"]
+    if results_path is not None and _resolve_path(results_path) != official_results_path:
+        raise OfficialPilotGateError(
+            "results path does not match frozen config",
+            error_code="results_path_mismatch",
+        )
+    records = _read_official_records(official_results_path, config=config)
+    first_pair = _records_for_attempt(records, task_id, 1)
+    if first_pair is None:
+        raise OfficialPilotGateError(
+            "repeat requires a complete reviewed attempt 1 pair",
+            error_code="repeat_parent_attempt_missing",
+        )
+    existing_attempts = {
+        int(record["attempt"])
+        for record in records
+        if record.get("task_id") == task_id
+    }
+    next_attempt = max(existing_attempts) + 1
+    if next_attempt < 2 or next_attempt > 1 + config.max_extra_runs_per_task:
+        raise OfficialPilotGateError(
+            "repeat attempt exceeds the frozen maximum",
+            error_code="repeat_attempt_limit",
+        )
+    if attempt is not None and attempt != next_attempt:
+        raise OfficialPilotGateError(
+            "repeat attempt must be the next contiguous attempt",
+            error_code="repeat_attempt_invalid",
+        )
+    parent_pair = _records_for_attempt(records, task_id, next_attempt - 1)
+    if parent_pair is None:
+        raise OfficialPilotGateError(
+            "repeat requires the immediately preceding complete pair",
+            error_code="repeat_parent_attempt_missing",
+        )
+    if any(record.get("acceptance_status") == "pending_manual" for record in parent_pair):
+        raise OfficialPilotGateError(
+            "repeat requires manual acceptance review",
+            error_code="repeat_parent_manual_pending",
+        )
+    parent_router = next(record for record in parent_pair if record.get("mode") == "router")
+    if _router_jev_audit_is_pending(parent_router):
+        raise OfficialPilotGateError(
+            "repeat requires JEV audit review",
+            error_code="repeat_parent_jev_audit_pending",
+        )
+    baseline, router = first_pair
+
+    fixture_path = Path(fixture_root) / task_id
+    try:
+        spec = load_fixture(fixture_path)
+        source_hash = _tree_hash(spec.path)
+    except Exception as exc:
+        raise OfficialPilotGateError(
+            "fixture is not loadable or hashable",
+            error_code="fixture_unloadable",
+        ) from exc
+    if spec.task_id != task_id:
+        raise OfficialPilotGateError(
+            "fixture task id does not match request",
+            error_code="fixture_task_mismatch",
+        )
+    if baseline.get("source_fixture_hash") != source_hash or router.get("source_fixture_hash") != source_hash:
+        raise OfficialPilotGateError(
+            "repeat source fixture hash does not match attempt 1",
+            error_code="repeat_source_fixture_mismatch",
+        )
+
+    target_artifact_dir = _artifact_task_dir(outputs["artifacts_dir"], task_id, next_attempt)
+    if target_artifact_dir.exists():
+        raise OfficialPilotGateError(
+            "repeat evidence artifact already exists",
+            error_code="artifact_orphan_or_duplicate",
+        )
+    _validate_repeat_triggers(task_id, normalized_triggers, router, config)
+    _require_jev_key_file()
+
+    return OfficialPreflight(
+        task_id=task_id,
+        fixture_path=spec.path,
+        source_fixture_hash=source_hash,
+        results_path=official_results_path,
+        next_task_id=task_id,
+        requires_jev_api_key=True,
+        config_schema_version=config.schema_version,
+        config=config,
+        config_path=_resolve_path(config_path),
+        workflow_state_path=_resolve_path(workflow_state_path),
+        registry_path=_resolve_path(registry_path),
+        fixture_root=_resolve_path(fixture_root),
+        artifacts_dir=outputs["artifacts_dir"],
+        acceptance_mode=spec.acceptance_mode,
+        _proof=_PREFLIGHT_TOKEN,
+        attempt=next_attempt,
+        repeat_triggers=normalized_triggers,
+        repeat_authorization_timestamp_utc=_utc_now(),
+    )
+
+
+def _normalize_repeat_triggers(triggers: Union[str, Sequence[str]]) -> Tuple[str, ...]:
+    values: Sequence[Any]
+    if isinstance(triggers, str):
+        values = triggers.split(",")
+    elif isinstance(triggers, Sequence):
+        values = triggers
+    else:
+        raise OfficialPilotGateError(
+            "repeat triggers must be a non-empty list or CSV string",
+            error_code="repeat_triggers_invalid",
+        )
+    normalized = []
+    for value in values:
+        if not isinstance(value, str) or not value.strip():
+            raise OfficialPilotGateError(
+                "repeat triggers must contain non-empty names",
+                error_code="repeat_triggers_invalid",
+            )
+        for item in value.split(","):
+            item = item.strip()
+            if not item:
+                raise OfficialPilotGateError(
+                    "repeat triggers must contain non-empty names",
+                    error_code="repeat_triggers_invalid",
+                )
+            if item in normalized:
+                raise OfficialPilotGateError(
+                    "repeat triggers must not contain duplicates",
+                    error_code="repeat_triggers_invalid",
+                )
+            normalized.append(item)
+    if not normalized:
+        raise OfficialPilotGateError(
+            "repeat triggers must be non-empty",
+            error_code="repeat_triggers_invalid",
+        )
+    return tuple(sorted(normalized))
+
+
+def _validate_repeat_triggers(
+    task_id: str,
+    triggers: Tuple[str, ...],
+    router_record: Mapping[str, Any],
+    config: PilotConfig,
+) -> None:
+    allowed = set(config.repeat_triggers)
+    if not set(triggers).issubset(allowed) or set(triggers) & set(config.forbidden_repeat_triggers):
+        raise OfficialPilotGateError(
+            "repeat trigger is not allowed by the frozen policy",
+            error_code="repeat_trigger_invalid",
+        )
+    if task_id != "task_003":
+        return
+    required = {"jev_confidence_below", "difficulty_score_near_bucket_boundary"}
+    if set(triggers) != required:
+        raise OfficialPilotGateError(
+            "task_003 repeat requires both objective frozen triggers",
+            error_code="repeat_trigger_set_invalid",
+        )
+    classifier = router_record.get("classifier")
+    if not isinstance(classifier, Mapping):
+        audit = router_record.get("jev_audit")
+        classifier = audit.get("classifier") if isinstance(audit, Mapping) else None
+    if not isinstance(classifier, Mapping):
+        raise OfficialPilotGateError(
+            "attempt 1 router classifier evidence is missing",
+            error_code="repeat_trigger_evidence_missing",
+        )
+    confidence = classifier.get("confidence")
+    difficulty_score = classifier.get("difficulty_score")
+    if (
+        isinstance(confidence, bool)
+        or not isinstance(confidence, (int, float))
+        or not math.isfinite(float(confidence))
+        or float(confidence) >= config.jev_confidence_threshold
+    ):
+        raise OfficialPilotGateError(
+            "jev_confidence_below objective trigger is not met",
+            error_code="repeat_trigger_unmet",
+        )
+    if (
+        isinstance(difficulty_score, bool)
+        or not isinstance(difficulty_score, int)
+        or difficulty_score not in config.difficulty_boundary_scores
+    ):
+        raise OfficialPilotGateError(
+            "difficulty_score_near_bucket_boundary objective trigger is not met",
+            error_code="repeat_trigger_unmet",
+        )
+
+
+def _records_for_attempt(
+    records: Sequence[Mapping[str, Any]], task_id: str, attempt: int
+) -> Optional[Tuple[Mapping[str, Any], Mapping[str, Any]]]:
+    matches = [
+        record
+        for record in records
+        if record.get("task_id") == task_id and record.get("attempt") == attempt
+    ]
+    if len(matches) != 2 or {record.get("mode") for record in matches} != {"baseline", "router"}:
+        return None
+    return (
+        next(record for record in matches if record.get("mode") == "baseline"),
+        next(record for record in matches if record.get("mode") == "router"),
+    )
+
+
 def execute_official_task(
     task_id: str,
     authorization: _OfficialExecutionAuthorization,
@@ -226,6 +467,11 @@ def execute_official_task(
 
     _require_authorization(authorization)
     _require_preflight(task_id, preflight)
+    if preflight.attempt != 1 or preflight.repeat_triggers:
+        raise OfficialPilotGateError(
+            "normal official execution is limited to attempt 1",
+            error_code="normal_attempt_invalid",
+        )
     _refresh_preflight(preflight)
     if task_id in EXPECTED_REAL_TASK_IDS:
         _require_jev_key_file()
@@ -295,7 +541,95 @@ def execute_official_task(
         "official_pilot": True,
         "status": "persisted",
         "task_id": task_id,
-        "attempt": 1,
+        "attempt": preflight.attempt,
+        "records_written": 2,
+        "results_path": "benchmark/results/pilot_runs.jsonl",
+    }
+
+
+def execute_official_repeat(
+    task_id: str,
+    authorization: _OfficialExecutionAuthorization,
+    preflight: OfficialPreflight,
+    *,
+    jev_factory: Optional[Callable[[], Any]] = None,
+    provider_factory: Optional[Callable[..., Any]] = None,
+    audit_jev_factory: Optional[Callable[[], Any]] = None,
+    timestamp_utc: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Execute exactly one fresh Baseline+Router repeat pair."""
+
+    _require_authorization(authorization)
+    _require_preflight(task_id, preflight)
+    if preflight.attempt < 2 or not preflight.repeat_triggers:
+        raise OfficialPilotGateError(
+            "a repeat preflight is required",
+            error_code="repeat_preflight_required",
+        )
+    _refresh_repeat_preflight(preflight)
+    _require_jev_key_file()
+    runtime = RealPilotRuntimeConfig(
+        baseline_model=preflight.config.baseline_model,
+        budget_limit=preflight.config.budget_limit_per_real_task,
+        estimated_max_costs=preflight.config.estimated_max_costs,
+        registry_path=preflight.registry_path,
+    )
+    pair = run_real_pilot_pair(
+        preflight.fixture_path,
+        runtime,
+        jev_factory=jev_factory,
+        provider_factory=provider_factory,
+    )
+    _validate_bridge_pair(pair, task_id)
+    evidence = pair.get("_evidence")
+    if not isinstance(evidence, Mapping):
+        raise OfficialPilotGateError(
+            "real-pilot evidence capture is missing",
+            error_code="evidence_missing",
+        )
+    repeat_authorization = _repeat_authorization(preflight)
+    baseline = _officialize_record(
+        pair["baseline"],
+        preflight,
+        timestamp_utc=timestamp_utc,
+        jev_audit=_baseline_audit(),
+        experimental_validation_cost=None,
+        repeat_authorization=repeat_authorization,
+    )
+    router_audit, experimental_cost = _router_audit(
+        pair["router"],
+        preflight,
+        audit_jev_factory=audit_jev_factory,
+    )
+    router = _officialize_record(
+        pair["router"],
+        preflight,
+        timestamp_utc=timestamp_utc,
+        jev_audit=router_audit,
+        experimental_validation_cost=experimental_cost,
+        repeat_authorization=repeat_authorization,
+    )
+    _validate_official_pair(baseline, router, task_id, attempt=preflight.attempt)
+    artifact_task_dir: Optional[Path] = None
+    try:
+        artifact_refs, artifact_task_dir = _materialize_evidence_bundle(
+            preflight,
+            evidence,
+            {"baseline": baseline, "router": router},
+        )
+        baseline = _attach_artifact_ref(baseline, artifact_refs["baseline"])
+        router = _attach_artifact_ref(router, artifact_refs["router"])
+        _validate_official_pair(baseline, router, task_id, attempt=preflight.attempt)
+        persist_official_pair(authorization, preflight, baseline, router)
+    except Exception:
+        if artifact_task_dir is not None and artifact_task_dir.exists():
+            _remove_artifact_bundle(artifact_task_dir)
+        raise
+    return {
+        "official_pilot": True,
+        "status": "persisted",
+        "task_id": task_id,
+        "attempt": preflight.attempt,
         "records_written": 2,
         "results_path": "benchmark/results/pilot_runs.jsonl",
     }
@@ -311,12 +645,33 @@ def persist_official_pair(
 
     _require_authorization(authorization)
     _require_preflight(preflight.task_id, preflight)
-    _validate_official_pair(baseline, router, preflight.task_id)
+    _validate_official_pair(
+        baseline,
+        router,
+        preflight.task_id,
+        attempt=preflight.attempt,
+    )
+    if preflight.attempt > 1:
+        expected_repeat_authorization = _repeat_authorization(preflight)
+        for record in (baseline, router):
+            if record.get("repeat_authorization") != expected_repeat_authorization:
+                raise OfficialPilotGateError(
+                    "repeat authorization metadata is invalid",
+                    error_code="repeat_authorization_invalid",
+                )
     baseline_line = _serialize_official_record(baseline)
     router_line = _serialize_official_record(router)
     existing_bytes = _read_official_bytes(preflight.results_path)
-    if existing_bytes:
-        _decode_official_records(existing_bytes)
+    existing_records = _decode_official_records(existing_bytes, config=preflight.config)
+    if any(
+        record.get("task_id") == preflight.task_id
+        and record.get("attempt") == preflight.attempt
+        for record in existing_records
+    ):
+        raise OfficialPilotGateError(
+            "official attempt already exists",
+            error_code="duplicate_official_record",
+        )
     _atomic_replace_official_jsonl(
         preflight.results_path,
         existing_bytes + baseline_line + router_line,
@@ -333,11 +688,13 @@ def finalize_manual_acceptance(
     fixture_root: Union[str, Path] = DEFAULT_FIXTURE_ROOT,
     results_path: Optional[Union[str, Path]] = None,
     timestamp_utc: Optional[str] = None,
+    attempt: int = 1,
 ) -> Dict[str, Any]:
     """Record advisor verdicts for one already persisted manual pair."""
 
     _require_authorization(authorization)
     _validate_task_id(task_id)
+    _validate_review_attempt(attempt)
     if not isinstance(baseline_passed, bool) or not isinstance(router_passed, bool):
         raise OfficialPilotGateError("manual verdicts must be boolean", error_code="manual_verdict_invalid")
     try:
@@ -348,28 +705,33 @@ def finalize_manual_acceptance(
     official_results_path = outputs["official_results_path"]
     if results_path is not None and _resolve_path(results_path) != official_results_path:
         raise OfficialPilotGateError("results path does not match frozen config", error_code="results_path_mismatch")
-    records = list(_read_official_records(official_results_path))
-    matches = [record for record in records if record.get("task_id") == task_id]
+    records = list(_read_official_records(official_results_path, config=config))
+    matches = [
+        record
+        for record in records
+        if record.get("task_id") == task_id and record.get("attempt") == attempt
+    ]
     if len(matches) != 2 or {record.get("mode") for record in matches} != {"baseline", "router"}:
         raise OfficialPilotGateError("manual review requires exactly one official pair", error_code="manual_pair_invalid")
     spec = load_fixture(Path(fixture_root) / task_id)
     if spec.acceptance_mode != "manual":
         raise OfficialPilotGateError("manual review is only valid for manual fixtures", error_code="manual_review_not_required")
     for record in matches:
-        if record.get("attempt") != 1 or record.get("acceptance_status") != "pending_manual":
+        if record.get("attempt") != attempt or record.get("acceptance_status") != "pending_manual":
             raise OfficialPilotGateError("manual pair is not pending review", error_code="manual_acceptance_not_pending")
         _verify_artifact_reference(
             record,
             outputs["artifacts_dir"],
             task_id,
             spec.allowed_paths,
+            attempt=attempt,
         )
 
     verdicts = {"baseline": baseline_passed, "router": router_passed}
     reviewed_at = timestamp_utc or _utc_now()
     updated = []
     for record in records:
-        if record.get("task_id") == task_id:
+        if record.get("task_id") == task_id and record.get("attempt") == attempt:
             mode = record["mode"]
             value = dict(record)
             value["acceptance_status"] = "manual_passed" if verdicts[mode] else "manual_failed"
@@ -402,11 +764,13 @@ def finalize_jev_audit_assessment(
     config_path: Union[str, Path] = DEFAULT_CONFIG_PATH,
     results_path: Optional[Union[str, Path]] = None,
     timestamp_utc: Optional[str] = None,
+    attempt: int = 1,
 ) -> Dict[str, Any]:
     """Record the advisor's assessment for one pending router JEV audit."""
 
     _require_authorization(authorization)
     _validate_task_id(task_id)
+    _validate_review_attempt(attempt)
     if task_id == CONTROLLED_FAILURE_TASK_ID:
         raise OfficialPilotGateError(
             "controlled mock JEV audit is not manually reviewable",
@@ -427,12 +791,14 @@ def finalize_jev_audit_assessment(
     official_results_path = outputs["official_results_path"]
     if results_path is not None and _resolve_path(results_path) != official_results_path:
         raise OfficialPilotGateError("results path does not match frozen config", error_code="results_path_mismatch")
-    records = list(_read_official_records(official_results_path))
-    matches = [record for record in records if record.get("task_id") == task_id]
+    records = list(_read_official_records(official_results_path, config=config))
+    matches = [
+        record
+        for record in records
+        if record.get("task_id") == task_id and record.get("attempt") == attempt
+    ]
     if len(matches) != 2 or {record.get("mode") for record in matches} != {"baseline", "router"}:
         raise OfficialPilotGateError("JEV audit review requires exactly one official pair", error_code="jev_audit_pair_invalid")
-    if any(record.get("attempt") != 1 for record in matches):
-        raise OfficialPilotGateError("JEV audit review requires attempt 1", error_code="jev_audit_pair_invalid")
 
     baseline = next(record for record in matches if record.get("mode") == "baseline")
     router = next(record for record in matches if record.get("mode") == "router")
@@ -462,7 +828,7 @@ def finalize_jev_audit_assessment(
     updated = []
     for record in records:
         value = dict(record)
-        if record.get("task_id") == task_id and record.get("mode") == "router":
+        if record.get("task_id") == task_id and record.get("attempt") == attempt and record.get("mode") == "router":
             audit = dict(router_audit)
             audit.update(
                 {
@@ -494,10 +860,12 @@ def _verify_artifact_reference(
     artifacts_dir: Path,
     task_id: str,
     allowed_paths: Sequence[str],
+    *,
+    attempt: int = 1,
 ) -> None:
     relative = _validate_artifact_relative(record.get("evidence_artifact"))
     candidate = (PROJECT_ROOT / relative).resolve(strict=False)
-    expected = (artifacts_dir / task_id / "attempt_1" / record.get("mode", "")).resolve(strict=False)
+    expected = (artifacts_dir / task_id / f"attempt_{attempt}" / record.get("mode", "")).resolve(strict=False)
     try:
         candidate.relative_to(artifacts_dir.resolve())
     except ValueError as exc:
@@ -525,7 +893,7 @@ def _verify_artifact_reference(
     if (
         manifest.get("schema_version") != "0.1"
         or manifest.get("task_id") != task_id
-        or manifest.get("attempt") != 1
+        or manifest.get("attempt") != attempt
         or manifest.get("mode") != record.get("mode")
     ):
         raise _manual_artifact_content_mismatch("manifest identity is invalid")
@@ -614,7 +982,10 @@ def _materialize_evidence_bundle(
     execution_records: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> Tuple[Dict[str, Dict[str, Any]], Path]:
     final_task_root = _artifact_task_root(preflight.artifacts_dir, preflight.task_id)
-    if final_task_root.exists():
+    final_attempt_dir = _artifact_task_dir(
+        preflight.artifacts_dir, preflight.task_id, preflight.attempt
+    )
+    if final_attempt_dir.exists():
         raise OfficialPilotGateError(
             "official evidence artifact already exists",
             error_code="artifact_orphan_or_duplicate",
@@ -642,9 +1013,15 @@ def _materialize_evidence_bundle(
 
     preflight.artifacts_dir.mkdir(parents=True, exist_ok=True)
     staging_dir: Optional[Path] = None
+    task_root_created = False
     try:
-        staging_dir = Path(tempfile.mkdtemp(prefix=f".{preflight.task_id}.", dir=str(preflight.artifacts_dir)))
-        attempt_dir = staging_dir / "attempt_1"
+        staging_dir = Path(
+            tempfile.mkdtemp(
+                prefix=f".{preflight.task_id}.attempt_{preflight.attempt}.",
+                dir=str(preflight.artifacts_dir),
+            )
+        )
+        attempt_dir = staging_dir
         manifest_hashes: Dict[str, str] = {}
         for mode, (response_text, files, manifest) in plans.items():
             mode_dir = attempt_dir / mode
@@ -655,16 +1032,19 @@ def _materialize_evidence_bundle(
             _write_artifact_file(mode_dir / "manifest.json", manifest_bytes)
             manifest_hashes[mode] = hashlib.sha256(manifest_bytes).hexdigest()
         _fsync_directory(staging_dir)
-        os.replace(staging_dir, final_task_root)
+        if not final_task_root.exists():
+            final_task_root.mkdir(parents=True, exist_ok=True)
+            task_root_created = True
+        os.replace(staging_dir, final_attempt_dir)
         staging_dir = None
         refs = {
             mode: {
-                "evidence_artifact": _relative_project_path(final_task_root / "attempt_1" / mode),
+                "evidence_artifact": _relative_project_path(final_attempt_dir / mode),
                 "evidence_manifest_sha256": manifest_hashes[mode],
             }
             for mode in plans
         }
-        return refs, final_task_root
+        return refs, final_attempt_dir
     except OSError as exc:
         raise OfficialPilotGateError(
             "official evidence artifact replacement failed",
@@ -674,6 +1054,11 @@ def _materialize_evidence_bundle(
         if staging_dir is not None:
             try:
                 shutil.rmtree(staging_dir)
+            except OSError:
+                pass
+        if task_root_created and final_task_root.exists() and not any(final_task_root.iterdir()):
+            try:
+                final_task_root.rmdir()
             except OSError:
                 pass
 
@@ -738,7 +1123,7 @@ def _build_evidence_plan(
     manifest = {
         "schema_version": "0.1",
         "task_id": preflight.task_id,
-        "attempt": 1,
+        "attempt": preflight.attempt,
         "mode": mode,
         "response_sha256": hashlib.sha256(response_bytes).hexdigest(),
         "allowed_paths": {
@@ -791,8 +1176,8 @@ def _artifact_task_root(artifacts_dir: Path, task_id: str) -> Path:
     return artifacts_dir / task_id
 
 
-def _artifact_task_dir(artifacts_dir: Path, task_id: str) -> Path:
-    return _artifact_task_root(artifacts_dir, task_id) / "attempt_1"
+def _artifact_task_dir(artifacts_dir: Path, task_id: str, attempt: int = 1) -> Path:
+    return _artifact_task_root(artifacts_dir, task_id) / f"attempt_{attempt}"
 
 
 def _attach_artifact_ref(record: Mapping[str, Any], reference: Mapping[str, Any]) -> Dict[str, Any]:
@@ -835,6 +1220,9 @@ def _relative_project_path(path: Path) -> str:
 def _remove_artifact_bundle(path: Path) -> None:
     try:
         shutil.rmtree(path)
+        parent = path.parent
+        if parent.name.startswith("task_") and parent.exists() and not any(parent.iterdir()):
+            parent.rmdir()
     except OSError as exc:
         raise OfficialPilotGateError(
             "new official evidence artifact could not be cleaned up",
@@ -974,12 +1362,13 @@ def _officialize_record(
     timestamp_utc: Optional[str],
     jev_audit: Mapping[str, Any],
     experimental_validation_cost: Optional[float],
+    repeat_authorization: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     result = dict(record)
     result.update(
         {
             "official_pilot": True,
-            "attempt": 1,
+            "attempt": preflight.attempt,
             "config_schema_version": preflight.config.schema_version,
             "config_snapshot": _config_snapshot(preflight.config),
             "timestamp_utc": timestamp_utc or _utc_now(),
@@ -988,6 +1377,8 @@ def _officialize_record(
             "experimental_validation_cost": experimental_validation_cost,
         }
     )
+    if repeat_authorization is not None:
+        result["repeat_authorization"] = dict(repeat_authorization)
     if (
         preflight.acceptance_mode == "manual"
         and result.get("controlled_mock_case") is None
@@ -1021,19 +1412,30 @@ def _validate_bridge_pair(pair: Mapping[str, Any], task_id: str) -> None:
         _reject_unsafe_record(record)
 
 
-def _validate_official_pair(baseline: Mapping[str, Any], router: Mapping[str, Any], task_id: str) -> None:
+def _validate_official_pair(
+    baseline: Mapping[str, Any],
+    router: Mapping[str, Any],
+    task_id: str,
+    *,
+    attempt: int = 1,
+) -> None:
     for mode, record in (("baseline", baseline), ("router", router)):
         if not isinstance(record, Mapping):
             raise OfficialPilotGateError("official pair contains a non-record", error_code="pair_invalid")
-        if record.get("official_pilot") is not True or record.get("attempt") != 1:
+        if record.get("official_pilot") is not True or record.get("attempt") != attempt:
             raise OfficialPilotGateError("official pair authorization fields are invalid", error_code="pair_authorization_invalid")
         if record.get("task_id") != task_id or record.get("mode") != mode:
             raise OfficialPilotGateError("official pair task or mode is invalid", error_code="pair_identity_invalid")
+        _validate_repeat_authorization_record(record, attempt)
         _reject_unsafe_record(record)
 
 
-def _read_official_records(path: Path) -> Sequence[Mapping[str, Any]]:
-    return _decode_official_records(_read_official_bytes(path))
+def _read_official_records(
+    path: Path,
+    *,
+    config: Optional[PilotConfig] = None,
+) -> Sequence[Mapping[str, Any]]:
+    return _decode_official_records(_read_official_bytes(path), config=config)
 
 
 def _read_official_bytes(path: Path) -> bytes:
@@ -1050,7 +1452,11 @@ def _read_official_bytes(path: Path) -> bytes:
     return raw
 
 
-def _decode_official_records(raw: bytes) -> Sequence[Mapping[str, Any]]:
+def _decode_official_records(
+    raw: bytes,
+    *,
+    config: Optional[PilotConfig] = None,
+) -> Sequence[Mapping[str, Any]]:
     if not raw:
         return []
     records = []
@@ -1064,14 +1470,101 @@ def _decode_official_records(raw: bytes) -> Sequence[Mapping[str, Any]]:
         _reject_unsafe_record(value)
         if value.get("official_pilot") is not True:
             raise OfficialPilotGateError("official result file contains a non-official record", error_code="mixed_official_results")
-        if value.get("attempt") != 1:
+        attempt = value.get("attempt")
+        if isinstance(attempt, bool) or not isinstance(attempt, int):
+            raise OfficialPilotGateError("official result attempt is invalid", error_code="attempt_invalid")
+        if config is None and attempt != 1:
             raise OfficialPilotGateError("repeat attempts are not authorized", error_code="repeat_attempt_forbidden")
+        max_attempt = 1 + (config.max_extra_runs_per_task if config is not None else 0)
+        if attempt <= 0 or attempt > max_attempt:
+            raise OfficialPilotGateError("official result attempt is outside the frozen limit", error_code="attempt_invalid")
         if value.get("task_id") not in (*EXPECTED_REAL_TASK_IDS, CONTROLLED_FAILURE_TASK_ID):
             raise OfficialPilotGateError("official result has an unsupported task id", error_code="official_task_invalid")
         if value.get("mode") not in {"baseline", "router"}:
             raise OfficialPilotGateError("official result has an unsupported mode", error_code="official_mode_invalid")
         records.append(value)
+    _validate_attempt_groups(records)
+    for record in records:
+        _validate_repeat_authorization_record(record, record["attempt"])
     return records
+
+
+def _validate_attempt_groups(records: Sequence[Mapping[str, Any]]) -> None:
+    grouped: Dict[Tuple[str, int], set] = {}
+    for record in records:
+        key = (record["task_id"], record["attempt"])
+        modes = grouped.setdefault(key, set())
+        mode = record["mode"]
+        if mode in modes:
+            raise OfficialPilotGateError(
+                "duplicate official mode within an attempt",
+                error_code="duplicate_official_record",
+            )
+        modes.add(mode)
+    by_task: Dict[str, set] = {}
+    for task_id, attempt in grouped:
+        by_task.setdefault(task_id, set()).add(attempt)
+    for task_id, attempts in by_task.items():
+        if 1 not in attempts:
+            raise OfficialPilotGateError(
+                "repeat attempt requires attempt 1",
+                error_code="repeat_attempt_forbidden",
+            )
+        expected = set(range(1, max(attempts) + 1))
+        if attempts != expected:
+            raise OfficialPilotGateError(
+                "official attempts contain a gap",
+                error_code="repeat_attempt_gap",
+            )
+    for modes in grouped.values():
+        if modes != {"baseline", "router"}:
+            raise OfficialPilotGateError(
+                "official attempt is incomplete",
+                error_code="incomplete_official_pair",
+            )
+
+
+def _validate_repeat_authorization_record(record: Mapping[str, Any], attempt: int) -> None:
+    authorization = record.get("repeat_authorization")
+    if attempt == 1:
+        if authorization is not None:
+            raise OfficialPilotGateError(
+                "attempt 1 must not contain repeat authorization metadata",
+                error_code="repeat_authorization_invalid",
+            )
+        return
+    if not isinstance(authorization, Mapping) or set(authorization) != {
+        "authorized_by",
+        "parent_attempt",
+        "triggers",
+        "timestamp_utc",
+    }:
+        raise OfficialPilotGateError(
+            "repeat authorization metadata is invalid",
+            error_code="repeat_authorization_invalid",
+        )
+    if authorization.get("authorized_by") != "advisor" or authorization.get("parent_attempt") != attempt - 1:
+        raise OfficialPilotGateError(
+            "repeat authorization parent is invalid",
+            error_code="repeat_authorization_invalid",
+        )
+    triggers = authorization.get("triggers")
+    if (
+        not isinstance(triggers, list)
+        or not triggers
+        or any(not isinstance(trigger, str) or not trigger for trigger in triggers)
+        or triggers != sorted(set(triggers))
+    ):
+        raise OfficialPilotGateError(
+            "repeat authorization triggers are invalid",
+            error_code="repeat_authorization_invalid",
+        )
+    timestamp = authorization.get("timestamp_utc")
+    if not isinstance(timestamp, str) or not timestamp.endswith("Z"):
+        raise OfficialPilotGateError(
+            "repeat authorization timestamp is invalid",
+            error_code="repeat_authorization_invalid",
+        )
 
 
 def _serialize_official_record(record: Mapping[str, Any]) -> bytes:
@@ -1130,45 +1623,54 @@ def _atomic_replace_official_jsonl(path: Path, content: bytes) -> None:
 
 
 def _next_allowed_task(records: Sequence[Mapping[str, Any]], config: PilotConfig) -> str:
-    grouped: Dict[str, Dict[str, int]] = {}
+    max_attempt = 1 + config.max_extra_runs_per_task
+    for record in records:
+        attempt = record.get("attempt")
+        if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt <= 0 or attempt > max_attempt:
+            raise OfficialPilotGateError(
+                "official result attempt is outside the frozen limit",
+                error_code="attempt_invalid",
+            )
+    _validate_attempt_groups(records)
+    grouped: Dict[str, Dict[int, set]] = {}
     for record in records:
         task_id = record["task_id"]
-        mode = record["mode"]
-        grouped.setdefault(task_id, {})[mode] = grouped.setdefault(task_id, {}).get(mode, 0) + 1
-        if grouped[task_id][mode] != 1:
-            raise OfficialPilotGateError("duplicate official first-attempt record", error_code="duplicate_official_record")
+        grouped.setdefault(task_id, {}).setdefault(record["attempt"], set()).add(record["mode"])
 
     ordered = (*config.real_task_ids, config.controlled_failure_task_id)
     for task in ordered:
         task_records = [record for record in records if record.get("task_id") == task]
-        if task in config.real_task_ids and _task_has_complete_pair(records, task):
-            router_records = [record for record in task_records if record.get("mode") == "router"]
+        for existing_attempt in sorted({record["attempt"] for record in task_records}):
+            attempt_records = [record for record in task_records if record.get("attempt") == existing_attempt]
+            router_records = [record for record in attempt_records if record.get("mode") == "router"]
             if router_records and _router_jev_audit_is_pending(router_records[0]):
                 raise OfficialPilotGateError(
                     "JEV audit review is pending",
                     error_code="jev_audit_pending",
                 )
-        if (
-            _task_has_complete_pair(records, task)
-            and any(record.get("acceptance_status") == "pending_manual" for record in task_records)
-        ):
-            raise OfficialPilotGateError(
-                "manual acceptance is pending",
-                error_code="manual_acceptance_pending",
-            )
+            if any(record.get("acceptance_status") == "pending_manual" for record in attempt_records):
+                raise OfficialPilotGateError(
+                    "manual acceptance is pending",
+                    error_code="manual_acceptance_pending",
+                )
     for index, task in enumerate(ordered):
-        modes = set(grouped.get(task, {}))
-        if modes and modes != {"baseline", "router"}:
+        task_attempts = grouped.get(task, {})
+        first_modes = task_attempts.get(1, set())
+        if first_modes and first_modes != {"baseline", "router"}:
             raise OfficialPilotGateError("official pair is incomplete", error_code="incomplete_official_pair")
-        if not modes:
+        if not first_modes:
             if any(grouped.get(later) for later in ordered[index + 1 :]):
                 raise OfficialPilotGateError("official results are out of order", error_code="task_order_violation")
             return task
     raise OfficialPilotGateError("all official task slots are complete", error_code="pilot_complete")
 
 
-def _task_has_complete_pair(records: Sequence[Mapping[str, Any]], task_id: str) -> bool:
-    modes = {record.get("mode") for record in records if record.get("task_id") == task_id}
+def _task_has_complete_pair(records: Sequence[Mapping[str, Any]], task_id: str, *, attempt: int = 1) -> bool:
+    modes = {
+        record.get("mode")
+        for record in records
+        if record.get("task_id") == task_id and record.get("attempt") == attempt
+    }
     return modes == {"baseline", "router"}
 
 
@@ -1178,13 +1680,8 @@ def _router_jev_audit_is_pending(record: Mapping[str, Any]) -> bool:
 
 
 def _validate_workflow_state(path: Union[str, Path]) -> str:
-    try:
-        state = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise OfficialPilotGateError("workflow state is not loadable", error_code="workflow_state_unloadable") from exc
-    preparation = state.get("pilot_preparation") if isinstance(state, dict) else None
-    if not isinstance(state, dict) or not isinstance(preparation, dict):
-        raise OfficialPilotGateError("workflow state is not valid", error_code="workflow_state_invalid")
+    state = _load_workflow_state(path)
+    preparation = state.get("pilot_preparation")
     phase_a = (
         state.get("status") == "pilot_config_frozen"
         and state.get("current_task") == "PILOT_OFFICIAL_EXECUTION_GATE"
@@ -1204,13 +1701,40 @@ def _validate_workflow_state(path: Union[str, Path]) -> str:
     raise OfficialPilotGateError("workflow is not in an allowed official execution phase", error_code="workflow_gate_not_ready")
 
 
+def _validate_repeat_workflow_state(path: Union[str, Path], task_id: str) -> None:
+    state = _load_workflow_state(path)
+    preparation = state["pilot_preparation"]
+    if not (
+        state.get("status") == "official_pilot_running"
+        and state.get("current_task") == "PILOT_REPEAT_GATE"
+        and preparation.get("execution_gate") == "official_repeat_required"
+        and preparation.get("real_pilot_started") is True
+        and preparation.get("current_task") == task_id
+    ):
+        raise OfficialPilotGateError(
+            "workflow is not in the exact official repeat phase",
+            error_code="workflow_gate_not_ready",
+        )
+
+
+def _load_workflow_state(path: Union[str, Path]) -> Dict[str, Any]:
+    try:
+        state = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise OfficialPilotGateError("workflow state is not loadable", error_code="workflow_state_unloadable") from exc
+    preparation = state.get("pilot_preparation") if isinstance(state, dict) else None
+    if not isinstance(state, dict) or not isinstance(preparation, dict):
+        raise OfficialPilotGateError("workflow state is not valid", error_code="workflow_state_invalid")
+    return state
+
+
 def _validate_phase_results(
     phase: str,
     records: Sequence[Mapping[str, Any]],
     config: PilotConfig,
 ) -> None:
     complete_pairs = sum(
-        _task_has_complete_pair(records, task_id)
+        _task_has_complete_pair(records, task_id, attempt=1)
         for task_id in (*config.real_task_ids, config.controlled_failure_task_id)
     )
     if phase == "before_first_official_run" and records:
@@ -1293,6 +1817,48 @@ def _refresh_preflight(preflight: OfficialPreflight) -> None:
         raise OfficialPilotGateError("official preflight is stale", error_code="preflight_stale")
 
 
+def _refresh_repeat_preflight(preflight: OfficialPreflight) -> None:
+    current = preflight_official_repeat(
+        preflight.task_id,
+        preflight.repeat_triggers,
+        attempt=preflight.attempt,
+        config_path=preflight.config_path,
+        workflow_state_path=preflight.workflow_state_path,
+        registry_path=preflight.registry_path,
+        fixture_root=preflight.fixture_root,
+    )
+    if (
+        current.source_fixture_hash != preflight.source_fixture_hash
+        or current.results_path != preflight.results_path
+        or current.attempt != preflight.attempt
+        or current.repeat_triggers != preflight.repeat_triggers
+    ):
+        raise OfficialPilotGateError("official repeat preflight is stale", error_code="preflight_stale")
+
+
+def _repeat_authorization(preflight: OfficialPreflight) -> Dict[str, Any]:
+    timestamp = preflight.repeat_authorization_timestamp_utc
+    if preflight.attempt < 2 or not preflight.repeat_triggers or timestamp is None:
+        raise OfficialPilotGateError(
+            "repeat authorization metadata is unavailable",
+            error_code="repeat_authorization_invalid",
+        )
+    return {
+        "authorized_by": "advisor",
+        "parent_attempt": preflight.attempt - 1,
+        "triggers": list(preflight.repeat_triggers),
+        "timestamp_utc": timestamp,
+    }
+
+
+def _validate_review_attempt(attempt: int) -> None:
+    if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1 or attempt > 3:
+        raise OfficialPilotGateError(
+            "review attempt must be an integer from 1 through 3",
+            error_code="attempt_invalid",
+        )
+
+
 def _reject_unsafe_record(value: Any) -> None:
     if isinstance(value, Mapping):
         for key, item in value.items():
@@ -1314,11 +1880,14 @@ __all__ = [
     "CONFIRMATION_TEXT",
     "JEV_AUDIT_REVIEW_CONFIRMATION_TEXT",
     "MANUAL_REVIEW_CONFIRMATION_TEXT",
+    "REPEAT_CONFIRMATION_TEXT",
     "OfficialPilotGateError",
     "OfficialPreflight",
+    "execute_official_repeat",
     "execute_official_task",
     "finalize_jev_audit_assessment",
     "finalize_manual_acceptance",
     "persist_official_pair",
+    "preflight_official_repeat",
     "preflight_official_task",
 ]
