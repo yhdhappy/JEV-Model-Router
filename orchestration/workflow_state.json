@@ -23,8 +23,8 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_SUMMARY_GATE",
-  "status": "pilot_summary_required",
+  "current_task": "PILOT_ADJUST_GATE",
+  "status": "pilot_complete_adjust",
   "retry_count": 0,
   "stop_reason": null,
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
@@ -63,8 +63,8 @@
       "task_009",
       "task_010_fallback"
     ],
-    "current_task": null,
-    "execution_gate": "official_pilot_complete_summary_required",
+    "current_task": "PILOT_ADJUST_GATE",
+    "execution_gate": "pilot_complete_adjust_required",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": true,
     "real_provider_gate": {
@@ -129,7 +129,7 @@
         "task_010_fallback"
       ],
       "last_reviewed_task": "task_010_fallback",
-      "next_task": "PILOT_SUMMARY_GATE",
+      "next_task": "PILOT_ADJUST_GATE",
       "task_001": {
         "baseline_acceptance": "manual_passed",
         "router_acceptance": "manual_failed",
@@ -419,10 +419,21 @@
         "repeat_exhausted": true
       },
       "official_slot_count": 10,
-      "official_results_records": 48
+      "official_results_records": 48,
+      "pilot_decision": "adjust",
+      "pilot_decision_effectiveness": "mixed"
     },
     "repeat_gate": {
       "status": "completed_all"
+    },
+    "summary_gate": {
+      "status": "passed",
+      "decision": "adjust",
+      "decision_effectiveness": "mixed",
+      "developer_review": "passed",
+      "independent_review": "passed",
+      "summary_json": "benchmark/results/pilot_summary.json",
+      "summary_markdown": "benchmark/results/pilot_summary.md"
     }
   }
 }

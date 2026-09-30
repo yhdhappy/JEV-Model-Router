@@ -232,3 +232,8 @@ task_009 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Route
 ## Pilot 执行收口状态
 
 10 个官方 Pilot slot 已全部完成：task_001..task_009 为真实 Baseline/Router 对比，task_010_fallback 为受控 Mock fallback/budget 验证。当前不再运行官方任务或 repeat，进入 `PILOT_SUMMARY_GATE`，下一步生成并审核 `benchmark/results/pilot_summary.json` 与 `benchmark/results/pilot_summary.md`，再由总顾问依据冻结 Go/Adjust/Stop 标准作最终判断。
+
+
+## Pilot 最终结论
+
+10 个官方 Pilot slot 已完成并生成 `benchmark/results/pilot_summary.json` 与 `benchmark/results/pilot_summary.md`。总顾问结论为 **Adjust**，决策有效性为 **mixed**：JEV 首轮 9/9 人工判断均为 reasonable，受控 fallback/budget 验证通过，成功可比任务中 Router 3/4 成本更低；但首轮验收 Router 4/9，低于 Baseline 6/9，并多次出现 `medium_model provider_timeout → high_model budget_limit_reached`。因此当前不进入真实 Agent 集成/UI，先进入 `PILOT_ADJUST_GATE`，只修 timeout/fallback/budget 相关问题并重跑受影响任务。
