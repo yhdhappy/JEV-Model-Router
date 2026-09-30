@@ -172,3 +172,8 @@ task_004 attempt=2 已完成复核：Baseline=manual_passed，Router=manual_pass
 
 
 task_004 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Router=manual_failed；JEV audit=reasonable，confidence=0.25、difficulty_score=4。冻结策略允许的 2 次额外运行已耗尽，不再允许 attempt=4；当前进入 task_005。
+
+
+### task_005 repeat 状态
+
+task_005 attempt=1 已复核：Baseline=manual_failed（artifact 测试文件存在 SyntaxError）；Router=manual_failed（`medium_model provider_timeout → high_model budget_limit_reached`）；JEV audit=reasonable，confidence=0.46、difficulty_score=5。冻结 repeat 条件 `jev_confidence_below` 与 `unexpected_fallback` 已触发，当前进入 attempt=2。
