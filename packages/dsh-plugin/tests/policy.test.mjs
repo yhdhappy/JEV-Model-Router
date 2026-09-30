@@ -15,7 +15,13 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 import { DEFAULT_MODELS } from '../lib/jev/models.js'
-import { NoEligibleModelError, decideRoute, priceProxy } from '../lib/jev/policy.js'
+import {
+  NoEligibleModelError,
+  decideRoute,
+  decideRouteForSettings,
+  decideRouteRelaxingTaskType,
+  priceProxy,
+} from '../lib/jev/policy.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PROJECT_ROOT = join(HERE, '..', '..', '..')
@@ -41,9 +47,54 @@ test('a lower tier is excluded below the capability floor', () => {
 })
 
 test('an unsupported task type excludes every tier', () => {
+  // The faithful mirror must keep throwing: the parity test depends on it.
   assert.throws(
     () => decideRoute(classify('other', 'low'), MODELS),
     (error) => error instanceof NoEligibleModelError,
+  )
+})
+
+test('relaxing an undeclared task type keeps the capability floor', () => {
+  const decision = decideRouteRelaxingTaskType(classify('other', 'low'), MODELS)
+  // Every tier clears a `low` floor, so the price proxy decides: medium wins.
+  assert.equal(decision.primary.name, 'medium_model')
+  assert.equal(decision.relaxed, true)
+  assert.ok(
+    decision.reason.some((line) => line.includes('relaxing the task-type filter')),
+  )
+  assert.ok(
+    decision.reason.some((line) => line.includes('task-type filter relaxed')),
+  )
+})
+
+test('relaxing still refuses when the capability floor cannot be met', () => {
+  const models = MODELS.filter((entry) => entry.capability !== 'high')
+  assert.throws(
+    () => decideRouteRelaxingTaskType(classify('other', 'high'), models),
+    (error) => error instanceof NoEligibleModelError,
+  )
+})
+
+test('the configured tolerance selects between relaxing and failing', () => {
+  const relaxed = decideRouteForSettings(classify('other', 'low'), MODELS, {
+    unmatchedTaskType: 'capability_only',
+  })
+  assert.equal(relaxed.primary.name, 'medium_model')
+
+  assert.throws(
+    () =>
+      decideRouteForSettings(classify('other', 'low'), MODELS, {
+        unmatchedTaskType: 'safe_default',
+      }),
+    (error) => error instanceof NoEligibleModelError,
+  )
+
+  // A declared task type is unaffected by the tolerance either way.
+  assert.equal(
+    decideRouteForSettings(classify('coding', 'low'), MODELS, {
+      unmatchedTaskType: 'safe_default',
+    }).primary.name,
+    'medium_model',
   )
 })
 

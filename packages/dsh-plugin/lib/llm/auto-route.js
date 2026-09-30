@@ -50,7 +50,7 @@
  */
 
 import { JevError, classifyJev } from '../jev/classifier.js'
-import { NoEligibleModelError, decideRoute } from '../jev/policy.js'
+import { NoEligibleModelError, decideRouteForSettings } from '../jev/policy.js'
 import {
   AUTO_CONTEXT_WINDOW,
   AUTO_MODEL,
@@ -204,10 +204,14 @@ async function* routeStream(ctx, options, settings, state, deps, origin) {
     at: new Date().toISOString(),
     kind: 'route',
     origin,
+    // Whether this request carried a session id decides whether the per-turn
+    // hold can work at all; recorded so a field run can prove it either way.
+    session_scoped: typeof options?.sessionId === 'string',
     provider: decision.provider,
     model: decision.model,
     route_source: decision.source,
     reused: decision.reused === true,
+    relaxed_task_type: decision.relaxedTaskType === true,
     classifier: decision.classifier ?? null,
     answer_confidences: decision.answerConfidences ?? null,
     jev_cost: decision.jevCost ?? null,
@@ -242,46 +246,71 @@ async function resolveRoute(options, settings, state, deps) {
   if (task.length === 0) {
     const held = sessionId !== undefined ? state.heldRoutes.get(sessionId) : undefined
     if (held !== undefined) return { ...held, reused: true }
-    return {
+    return hold(state, sessionId, {
       source: 'safe_default',
       provider: settings.safeDefault.provider,
       model: settings.safeDefault.model,
       reason: ['no user text in the request; nothing to classify'],
-    }
+    })
   }
 
   const classified = await classifyCached(task, settings, state, deps.classify ?? classifyJev)
-  let policy
-  try {
-    policy = decideRoute(classified.classifier, settings.models)
-  } catch (error) {
-    if (error instanceof NoEligibleModelError) {
-      deps.log.warn('jev-router: %s', error.message)
-      return {
-        source: 'safe_default',
-        provider: settings.safeDefault.provider,
-        model: settings.safeDefault.model,
-        classifier: classified.classifier,
-        answerConfidences: classified.answer_confidences,
-        reason: [error.message],
-        error: 'no_eligible_model',
-      }
-    }
-    throw error
+  const carried = {
+    classifier: classified.classifier,
+    answerConfidences: classified.answer_confidences,
+    jevCost: classified.metrics?.exact_cost ?? null,
+    jevLatencyMs: classified.metrics?.latency_ms ?? null,
   }
 
-  const decision = {
+  // A safe default is a decision like any other: it must be held for the rest
+  // of the turn too. Not holding it made every later step of the turn re-decide
+  // (observed in the field as repeated `reused: false` records).
+  const safeDefault = (extra) =>
+    hold(state, sessionId, {
+      source: 'safe_default',
+      provider: settings.safeDefault.provider,
+      model: settings.safeDefault.model,
+      ...carried,
+      ...extra,
+    })
+
+  let policy
+  try {
+    // The configured tolerance for an undeclared task type, shared with the
+    // `/jev` command so both always report the same model.
+    policy = decideRouteForSettings(classified.classifier, settings.models, {
+      unmatchedTaskType: settings.unmatchedTaskType,
+    })
+  } catch (error) {
+    if (!(error instanceof NoEligibleModelError)) throw error
+    deps.log.warn('jev-router: %s', error.message)
+    return safeDefault({ reason: [error.message], error: 'no_eligible_model' })
+  }
+
+  return hold(state, sessionId, {
     source: 'jev',
     provider: policy.primary.provider,
     model: policy.primary.model,
-    classifier: classified.classifier,
-    answerConfidences: classified.answer_confidences,
-    jevCost: classified.metrics.exact_cost,
-    jevLatencyMs: classified.metrics.latency_ms,
+    ...carried,
     reason: policy.reason,
+    relaxedTaskType: policy.relaxed === true,
     fallback: policy.fallbacks.map((entry) => `${entry.provider}/${entry.model}`),
-  }
+  })
+}
 
+/**
+ * Remember one resolved route for the rest of its turn.
+ *
+ * Holding the route is what keeps a turn on a single model and stops every
+ * tool round-trip from paying the classifier again; it applies to fallback
+ * decisions exactly as it does to a normal policy decision.
+ *
+ * @param state - per-fiber turn state.
+ * @param sessionId - the owning session, when the caller supplied one.
+ * @param decision - the decision to remember.
+ * @returns the same decision, for convenient returning.
+ */
+function hold(state, sessionId, decision) {
   if (sessionId !== undefined) state.heldRoutes.set(sessionId, decision)
   return decision
 }

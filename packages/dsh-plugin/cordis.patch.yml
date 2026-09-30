@@ -20,6 +20,14 @@
         timeoutMs: 30000
         # Set autoRoute: false to remove "自动选择" from the picker entirely.
         autoRoute: true
+        # What to do when JEV returns a task type no configured model declares
+        # (it returns `other` for meta and conversational work):
+        #   capability_only (default) — drop the task-type filter, keep the
+        #                               capability floor, so such turns still
+        #                               land on an appropriately sized model
+        #   safe_default              — treat it as "no eligible model" and use
+        #                               safeDefault below
+        unmatchedTaskType: 'capability_only'
         # Model used when JEV cannot decide. Never the cheapest tier.
         safeDefault:
           provider: 'opencode-go'

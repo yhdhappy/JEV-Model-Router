@@ -24,7 +24,7 @@ import { dirname, join } from 'node:path'
 
 import { JevError, classifyJev } from './jev/classifier.js'
 import { AUTO_PROVIDER, DEFAULT_MODELS } from './jev/models.js'
-import { NoEligibleModelError, decideRoute } from './jev/policy.js'
+import { NoEligibleModelError, decideRouteForSettings } from './jev/policy.js'
 import { registerAutoRoute } from './llm/auto-route.js'
 
 /** Cordis plugin name. */
@@ -136,15 +136,19 @@ async function runJevCommand(invocation, settings) {
   const { classifier, metrics, answer_confidences: perAnswer = {} } = outcome
   const inputSource = rawInput.length > 0 ? '命令参数' : '最近一条消息'
 
-  // Run the same Policy mirror the auto route uses, so the command shows what
-  // would actually be selected rather than a second, divergent guess.
+  // Run the same decider the auto route uses, so the command shows what would
+  // actually be selected rather than a second, divergent guess.
   let reference = '（无可用模型）'
   let referenceDetail = null
   try {
-    const decision = decideRoute(classifier, settings.models)
+    const decision = decideRouteForSettings(classifier, settings.models, {
+      unmatchedTaskType: settings.unmatchedTaskType,
+    })
     reference = `${decision.primary.provider} / ${decision.primary.model}`
     referenceDetail =
-      `落选原因：` +
+      (decision.relaxed === true
+        ? '任务类型无匹配，已放宽任务类型过滤、保留能力下限｜'
+        : '落选原因：') +
       (decision.fallbacks.length > 0
         ? `备选 ${decision.fallbacks.map((m) => m.name).join(' → ')}`
         : '无其它合格模型')
@@ -240,6 +244,12 @@ export function resolveSettings(config) {
       ? { provider: raw.safeDefault.provider, model: raw.safeDefault.model }
       : { ...DEFAULT_SAFE_DEFAULT }
 
+  // JEV returns `other` for meta and conversational work, and the frozen
+  // registry declares no model for it. Dropping the task-type filter keeps such
+  // turns on a capability-appropriate model instead of the safe default.
+  const unmatchedTaskType =
+    raw.unmatchedTaskType === 'safe_default' ? 'safe_default' : 'capability_only'
+
   return {
     apiKeyFile:
       typeof raw.apiKeyFile === 'string' && raw.apiKeyFile.length > 0
@@ -251,6 +261,7 @@ export function resolveSettings(config) {
         : DEFAULT_DECISION_LOG,
     models: resolveModels(raw.models),
     safeDefault,
+    unmatchedTaskType,
     cacheSize,
     autoRoute: raw.autoRoute !== false,
     timeoutMs,

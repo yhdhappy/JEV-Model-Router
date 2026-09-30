@@ -113,6 +113,23 @@ tail -1 ~/.dsh/jev-router/decisions.jsonl | python3 -m json.tool
 deepseek 适配器在不匹配时直接抛 `INVALID_REPLAY_STATE`，风险高于收益。**P1 接受这个损失**：
 它影响的是 provider 原生保真度（例如推理签名），不影响正确性。
 
+### 首次真实运行发现并修掉的三个问题
+
+第一次真实的 `自动选择` 运行（2026-09-30）在决策日志里留下了 4 条 `reused: false` 记录，
+每一轮都重新判定。事后逐条定位，**三个问题都出在本插件**：
+
+| 问题 | 根因 | 修法 |
+|---|---|---|
+| 同一轮每一步都重新决策（`reused: false`） | Policy 报"无可用模型"时提前 `return`，**没有把这一轮的结果存进轮次持有表**，导致后续每一步都找不到持有结果 | 抽出 `hold()`，**所有**决策路径（含 safe default）都写入持有表 |
+| safe default 记录里 `jev_cost` / `jev_latency_ms` 为 `null` | 同一条提前返回路径没有带上已经完成的 JEV 指标 | JEV 指标在分类后统一装进 `carried`，所有路径共用 |
+| `task_type=other` 一律走保底（= 最贵的档） | 冻结注册表里没有模型声明 `other`，而 JEV 对元任务/闲聊就是返回 `other` | 新增 `unmatchedTaskType` 策略，默认 `capability_only`：**放宽任务类型过滤、保留能力下限**，而不是直接保底 |
+
+判定轮次的诊断字段 `session_scoped` 已加入决策日志，用来在真实运行中直接证明会话标识是否可用。
+
+> 说明：**忠实镜像没有被破坏**。`decideRoute()` 仍然严格照搬 Python 版并在无匹配时抛错，
+> 与 Python 的 27 组合对拍测试照常通过；放宽行为是**额外的、显式可配置的**入口
+> `decideRouteRelaxingTaskType()` / `decideRouteForSettings()`。
+
 ### 这一版**还没有**的东西
 
 - **没有模型 fallback 链**：一轮内换模型在流式输出开始后不是安全的本地决策，本版交给 DSH 已有的重试机制处理。
@@ -143,6 +160,7 @@ profile 的 `package.json` / `cordis.patch.yml`，也不要手工跑 pnpm ——
 | `decisionLog` | `~/.dsh/jev-router/decisions.jsonl` | 决策日志路径 |
 | `timeoutMs` | `30000` | 单次 JEV 调用超时（毫秒） |
 | `autoRoute` | `true` | 设为 `false` 则**完全不注册**"自动选择" |
+| `unmatchedTaskType` | `capability_only` | JEV 返回没有模型声明的任务类型（例如 `other`）时的策略：`capability_only` 放宽任务类型过滤、保留能力下限；`safe_default` 直接走保底模型 |
 | `safeDefault` | `opencode-go / gpt-5.6-luna` | JEV 失败或无可选模型时使用的模型 |
 | `cacheSize` | `32` | 任务文本判定结果的有界缓存条数 |
 | `models` | 见 `lib/jev/models.js` | 可覆盖的模型表（名称/provider/模型 id/能力档/任务类型/价格/启用） |

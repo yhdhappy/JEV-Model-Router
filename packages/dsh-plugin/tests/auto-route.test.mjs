@@ -62,6 +62,7 @@ function settings(overrides = {}) {
     decisionLog: '/tmp/jev-route-test.jsonl',
     models: DEFAULT_MODELS.map((entry) => ({ ...entry, taskTypes: [...entry.taskTypes] })),
     safeDefault: { provider: 'opencode-go', model: 'gpt-5.6-luna' },
+    unmatchedTaskType: 'capability_only',
     cacheSize: 8,
     autoRoute: true,
     timeoutMs: 1000,
@@ -331,10 +332,60 @@ test('a JEV failure falls back to the safe default, never the cheapest tier', as
   assert.ok(ctx.captured.warnings.length >= 1)
 })
 
-test('an unsupported task type falls back to the safe default', async () => {
+test('an undeclared task type relaxes the filter instead of paying for the safe default', async () => {
   const ctx = fakeContext()
   const records = []
   registerAutoRoute(ctx, settings(), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }, { task_type: 'other', required_capability: 'low' }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 's4', messages: userTurn('read the docs') },
+      () => {},
+    ),
+  )
+
+  // No model declares `other`, so the task-type filter is dropped and the
+  // capability floor decides: medium (0.62) still beats low (0.65).
+  assert.equal(ctx.captured.streams[0].model, 'qwen3.8-flash')
+  assert.equal(records[0].route_source, 'jev')
+  assert.equal(records[0].relaxed_task_type, true)
+  assert.ok(records[0].reason.some((line) => line.includes('relaxing the task-type filter')))
+})
+
+test('the undeclared-task-type tolerance is configurable', async () => {
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(ctx, settings({ unmatchedTaskType: 'safe_default' }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }, { task_type: 'other', required_capability: 'low' }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 's4b', messages: userTurn('something odd') },
+      () => {},
+    ),
+  )
+
+  assert.equal(ctx.captured.streams[0].model, 'gpt-5.6-luna')
+  assert.equal(records[0].route_source, 'safe_default')
+  assert.equal(records[0].error, 'no_eligible_model')
+})
+
+test('a capability shortfall still falls back even when relaxing is allowed', async () => {
+  const ctx = fakeContext()
+  const records = []
+  const models = DEFAULT_MODELS.filter((entry) => entry.capability !== 'high').map(
+    (entry) => ({ ...entry, taskTypes: [...entry.taskTypes] }),
+  )
+  registerAutoRoute(ctx, settings({ models }), {
     log: ctx.logger,
     recordDecision: async (path, record) => records.push(record),
     classify: stubClassifier({ count: 0 }, { task_type: 'other', required_capability: 'high' }),
@@ -343,14 +394,85 @@ test('an unsupported task type falls back to the safe default', async () => {
 
   await drain(
     listener.listener(
-      { provider: 'jev-router', model: 'auto', sessionId: 's4', messages: userTurn('something odd') },
+      { provider: 'jev-router', model: 'auto', sessionId: 's4c', messages: userTurn('hard meta task') },
       () => {},
     ),
   )
 
-  assert.equal(ctx.captured.streams[0].model, 'gpt-5.6-luna')
   assert.equal(records[0].route_source, 'safe_default')
   assert.equal(records[0].error, 'no_eligible_model')
+})
+
+test('a safe-default turn is held for the rest of that turn', async () => {
+  // Field regression: the safe-default path returned early without holding the
+  // decision, so every later step of the turn re-decided (`reused: false`).
+  const ctx = fakeContext()
+  const records = []
+  const calls = { count: 0 }
+  registerAutoRoute(ctx, settings({ unmatchedTaskType: 'safe_default' }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier(calls, { task_type: 'other', required_capability: 'low' }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 's6', messages: userTurn('read the docs') },
+      () => {},
+    ),
+  )
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 's6', messages: toolStep() },
+      () => {},
+    ),
+  )
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 's6', messages: toolStep() },
+      () => {},
+    ),
+  )
+
+  assert.equal(calls.count, 1, 'later steps must not re-classify')
+  assert.deepEqual(
+    records.map((record) => record.reused),
+    [false, true, true],
+  )
+  assert.deepEqual(
+    records.map((record) => record.route_source),
+    ['safe_default', 'safe_default', 'safe_default'],
+  )
+  assert.deepEqual(
+    ctx.captured.streams.map((entry) => entry.model),
+    ['gpt-5.6-luna', 'gpt-5.6-luna', 'gpt-5.6-luna'],
+  )
+})
+
+test('the safe-default path still records what JEV cost', async () => {
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(ctx, settings({ unmatchedTaskType: 'safe_default' }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }, { task_type: 'other', required_capability: 'low' }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 's7', messages: userTurn('meta task') },
+      () => {},
+    ),
+  )
+
+  assert.equal(records[0].route_source, 'safe_default')
+  assert.equal(records[0].jev_cost, 0.0000042, 'the classifier ran, so its cost must be recorded')
+  assert.equal(records[0].jev_latency_ms, 12)
+  assert.ok(records[0].classifier)
+  assert.ok(records[0].answer_confidences)
+  assert.equal(records[0].session_scoped, true)
 })
 
 test('a request with no user text uses the safe default without classifying', async () => {
