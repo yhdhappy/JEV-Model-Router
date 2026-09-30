@@ -23,8 +23,8 @@
     "thinking": "medium"
   },
   "last_completed_task": "T-15",
-  "current_task": "PILOT_OFFICIAL_EXECUTION",
-  "status": "official_pilot_running",
+  "current_task": "PILOT_SUMMARY_GATE",
+  "status": "pilot_summary_required",
   "retry_count": 0,
   "stop_reason": null,
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
@@ -63,8 +63,8 @@
       "task_009",
       "task_010_fallback"
     ],
-    "current_task": "task_010_fallback",
-    "execution_gate": "official_pilot_in_progress",
+    "current_task": null,
+    "execution_gate": "official_pilot_complete_summary_required",
     "controlled_mock_exception": "task_010_fallback",
     "real_pilot_started": true,
     "real_provider_gate": {
@@ -125,10 +125,11 @@
         "task_006",
         "task_007",
         "task_008",
-        "task_009"
+        "task_009",
+        "task_010_fallback"
       ],
-      "last_reviewed_task": "task_009",
-      "next_task": "task_010_fallback",
+      "last_reviewed_task": "task_010_fallback",
+      "next_task": "PILOT_SUMMARY_GATE",
       "task_001": {
         "baseline_acceptance": "manual_passed",
         "router_acceptance": "manual_failed",
@@ -416,16 +417,12 @@
           "baseline_total_production_cost": 0.03636494
         },
         "repeat_exhausted": true
-      }
+      },
+      "official_slot_count": 10,
+      "official_results_records": 48
     },
     "repeat_gate": {
-      "status": "completed",
-      "task_id": "task_009",
-      "attempts_completed": [
-        2,
-        3
-      ],
-      "max_extra_runs_exhausted": true
+      "status": "completed_all"
     }
   }
 }

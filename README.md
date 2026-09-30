@@ -227,3 +227,8 @@ task_009 attempt=2 已复核：Baseline=manual_passed，Router=manual_passed；R
 
 
 task_009 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Router=manual_passed；Router 与 Baseline 都使用 high_model；JEV audit=reasonable，confidence=0.19、difficulty_score=8。额外运行次数已耗尽，当前进入最后一个受控 task_010_fallback。
+
+
+## Pilot 执行收口状态
+
+10 个官方 Pilot slot 已全部完成：task_001..task_009 为真实 Baseline/Router 对比，task_010_fallback 为受控 Mock fallback/budget 验证。当前不再运行官方任务或 repeat，进入 `PILOT_SUMMARY_GATE`，下一步生成并审核 `benchmark/results/pilot_summary.json` 与 `benchmark/results/pilot_summary.md`，再由总顾问依据冻结 Go/Adjust/Stop 标准作最终判断。
