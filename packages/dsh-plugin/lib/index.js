@@ -1,14 +1,19 @@
 /**
- * JEV Model Router — DeepSeek Harness adapter (P0 probe).
+ * JEV Model Router — DeepSeek Harness adapter.
  *
- * Stage P0 is deliberately observation-only: it classifies a task through the
- * real JEV (TypeSafe System One) API and reports the judgment. It never
- * intercepts, reroutes, or delays a model request, so mounting this plugin
- * cannot change what the agent does or what a run costs.
+ * Two capabilities live here:
  *
- * The module intentionally imports nothing from `@deepseek-ai/*`: the command
- * registry contract is used directly, which keeps the package installable from
- * a plain local path with no peer-resolution step.
+ * - **`/jev` (P0, observation-only)** — classifies a task through the real JEV
+ *   (TypeSafe System One) API and reports the judgment. It never touches a
+ *   model request.
+ * - **`自动选择` (P1)** — registers a synthetic `jev-router/auto` catalog entry
+ *   so the model picker offers an automatic choice, then routes each user turn
+ *   to a concrete configured model. Routing is opt-in: nothing changes until
+ *   the user selects it.
+ *
+ * The module intentionally imports nothing from `@deepseek-ai/*`: the command,
+ * tool, and LLM service contracts are used directly, which keeps the package
+ * installable from a plain local path with no peer-resolution step.
  *
  * @module dsh-plugin-jev-router
  */
@@ -18,25 +23,15 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 import { JevError, classifyJev } from './jev/classifier.js'
+import { AUTO_PROVIDER, DEFAULT_MODELS } from './jev/models.js'
+import { NoEligibleModelError, decideRoute } from './jev/policy.js'
+import { registerAutoRoute } from './llm/auto-route.js'
 
 /** Cordis plugin name. */
 export const name = 'jev-router'
 
 /** Services this plugin consumes. */
 export const inject = ['commands']
-
-/**
- * Frozen stage-1 model layering, mirroring `config/models.real-pilot.yaml`.
- *
- * P0 reports this as a *reference* suggestion only; the real Policy Engine
- * (task-type filtering, price ordering, budget guard, fallback chain) is not
- * part of this stage.
- */
-export const DEFAULT_MODEL_LAYERS = Object.freeze({
-  low: 'glm-5.3-flash',
-  medium: 'qwen3.8-flash',
-  high: 'gpt-5.6-luna',
-})
 
 /** Default decision-log location, outside any frozen benchmark results path. */
 export const DEFAULT_DECISION_LOG = join(
@@ -46,17 +41,24 @@ export const DEFAULT_DECISION_LOG = join(
   'decisions.jsonl',
 )
 
+/** Model used when JEV cannot decide: never the cheapest tier. */
+export const DEFAULT_SAFE_DEFAULT = Object.freeze({
+  provider: 'opencode-go',
+  model: 'gpt-5.6-luna',
+})
+
 const USAGE =
   '用法：/jev <任务描述>；也可直接 /jev 让 JEV 判断你最近一条消息。'
 
 /**
- * Register the `/jev` command.
+ * Register the `/jev` command and the automatic model route.
  *
- * @param ctx - the Cordis context carrying the command registry.
+ * @param ctx - the Cordis context carrying the command and LLM registries.
  * @param config - raw plugin config supplied by the profile patch.
  */
 export function apply(ctx, config = {}) {
   const settings = resolveSettings(config)
+  const logger = ctx.logger ?? { info() {}, warn() {} }
 
   ctx.commands.register({
     definitionId: 'dsh-plugin-jev-router',
@@ -67,8 +69,20 @@ export function apply(ctx, config = {}) {
     handler: (invocation) => runJevCommand(invocation, settings),
   })
 
-  ctx.logger?.info(
-    'jev-router (P0 probe) ready: /jev registered; key file %s',
+  if (settings.autoRoute && typeof ctx.llm?.registerAdapter === 'function') {
+    registerAutoRoute(ctx, settings, {
+      log: logger,
+      recordDecision,
+    })
+  } else if (settings.autoRoute) {
+    logger.warn(
+      'jev-router: the LLM service is unavailable, so "自动选择" was not registered',
+    )
+  }
+
+  logger.info(
+    'jev-router ready: /jev registered; auto route %s; key file %s',
+    settings.autoRoute ? 'enabled' : 'disabled',
     settings.apiKeyFile ? 'configured' : 'NOT configured',
   )
 }
@@ -119,7 +133,23 @@ async function runJevCommand(invocation, settings) {
 
   const { classifier, metrics, answer_confidences: perAnswer = {} } = outcome
   const inputSource = rawInput.length > 0 ? '命令参数' : '最近一条消息'
-  const reference = settings.modelLayers[classifier.required_capability] ?? '（未配置）'
+
+  // Run the same Policy mirror the auto route uses, so the command shows what
+  // would actually be selected rather than a second, divergent guess.
+  let reference = '（无可用模型）'
+  let referenceDetail = null
+  try {
+    const decision = decideRoute(classifier, settings.models)
+    reference = `${decision.primary.provider} / ${decision.primary.model}`
+    referenceDetail =
+      `落选原因：` +
+      (decision.fallbacks.length > 0
+        ? `备选 ${decision.fallbacks.map((m) => m.name).join(' → ')}`
+        : '无其它合格模型')
+  } catch (error) {
+    referenceDetail =
+      error instanceof NoEligibleModelError ? error.message : String(error)
+  }
 
   // Awaited on purpose: a decision that is reported to the user must also be
   // on disk, so the evidence log can never silently lag the answer.
@@ -167,7 +197,10 @@ async function runJevCommand(invocation, settings) {
 
   lines.push(
     '',
-    `参考模型（按已冻结的三层配置，未经完整 Policy）：${reference}`,
+    `参考模型（与"自动选择"同一套 Policy）：${reference}`,
+  )
+  if (referenceDetail !== null) lines.push(referenceDetail)
+  lines.push(
     '',
     '说明：本命令只做判断，不会改变本次请求使用的模型。',
   )
@@ -178,25 +211,32 @@ async function runJevCommand(invocation, settings) {
 /**
  * Resolve plugin settings from raw config, environment, and defaults.
  *
+ * Exported for tests; the loader only reads `name`, `inject`, and `apply`.
+ *
  * @param config - raw config object from the profile patch.
  * @returns the normalized settings.
  */
-function resolveSettings(config) {
+export function resolveSettings(config) {
   const raw = typeof config === 'object' && config !== null ? config : {}
   const envKeyFile =
     process.env.JEV_API_KEY_FILE ?? process.env.TYPESAFE_API_KEY_FILE ?? ''
-
-  const modelLayers = { ...DEFAULT_MODEL_LAYERS }
-  if (typeof raw.modelLayers === 'object' && raw.modelLayers !== null) {
-    for (const [key, value] of Object.entries(raw.modelLayers)) {
-      if (typeof value === 'string' && value.length > 0) modelLayers[key] = value
-    }
-  }
 
   const timeoutMs =
     typeof raw.timeoutMs === 'number' && Number.isFinite(raw.timeoutMs) && raw.timeoutMs > 0
       ? raw.timeoutMs
       : 30_000
+
+  const cacheSize =
+    Number.isInteger(raw.cacheSize) && raw.cacheSize > 0 ? raw.cacheSize : 32
+
+  const safeDefault =
+    typeof raw.safeDefault === 'object' &&
+    raw.safeDefault !== null &&
+    typeof raw.safeDefault.provider === 'string' &&
+    typeof raw.safeDefault.model === 'string' &&
+    raw.safeDefault.provider !== AUTO_PROVIDER
+      ? { provider: raw.safeDefault.provider, model: raw.safeDefault.model }
+      : { ...DEFAULT_SAFE_DEFAULT }
 
   return {
     apiKeyFile:
@@ -207,9 +247,63 @@ function resolveSettings(config) {
       typeof raw.decisionLog === 'string' && raw.decisionLog.length > 0
         ? raw.decisionLog
         : DEFAULT_DECISION_LOG,
-    modelLayers,
+    models: resolveModels(raw.models),
+    safeDefault,
+    cacheSize,
+    autoRoute: raw.autoRoute !== false,
     timeoutMs,
   }
+}
+
+/**
+ * Resolve the configured model catalog.
+ *
+ * Entries are validated per field with a fall back to the frozen defaults, so
+ * one malformed entry cannot take the whole route table down.
+ *
+ * @param configured - the raw `models` config value.
+ * @returns the model entries used by the Policy mirror.
+ */
+function resolveModels(configured) {
+  if (!Array.isArray(configured) || configured.length === 0) {
+    return DEFAULT_MODELS.map((entry) => ({ ...entry, taskTypes: [...entry.taskTypes] }))
+  }
+  const resolved = []
+  for (const entry of configured) {
+    if (typeof entry !== 'object' || entry === null) continue
+    const {
+      name,
+      provider,
+      model,
+      capability,
+      taskTypes,
+      input,
+      output,
+      enabled,
+    } = entry
+    if (typeof name !== 'string' || name.length === 0) continue
+    if (typeof provider !== 'string' || provider.length === 0) continue
+    // A model routed back into this plugin would recurse without bound.
+    if (provider === AUTO_PROVIDER) continue
+    if (typeof model !== 'string' || model.length === 0) continue
+    if (!['low', 'medium', 'high'].includes(capability)) continue
+    if (!Array.isArray(taskTypes) || taskTypes.length === 0) continue
+    if (typeof input !== 'number' || !Number.isFinite(input) || input < 0) continue
+    if (typeof output !== 'number' || !Number.isFinite(output) || output < 0) continue
+    resolved.push({
+      name,
+      provider,
+      model,
+      capability,
+      taskTypes: [...taskTypes],
+      input,
+      output,
+      enabled: enabled !== false,
+    })
+  }
+  return resolved.length > 0
+    ? resolved
+    : DEFAULT_MODELS.map((entry) => ({ ...entry, taskTypes: [...entry.taskTypes] }))
 }
 
 /**

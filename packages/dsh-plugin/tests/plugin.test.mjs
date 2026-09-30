@@ -12,23 +12,35 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
 
-import { apply, inject, name } from '../lib/index.js'
+import { apply, inject, name, resolveSettings } from '../lib/index.js'
 
 /** Minimal Cordis context capturing the command registration. */
 function fakeContext() {
   const registered = []
   const logs = []
+  const warnings = []
   return {
     registered,
     logs,
+    warnings,
     commands: {
       register(definition) {
         registered.push(definition)
       },
     },
+    llm: {
+      registerAdapter() {},
+      stream() {
+        return (async function* () {})()
+      },
+    },
+    on() {},
     logger: {
       info(...args) {
         logs.push(args)
+      },
+      warn(...args) {
+        warnings.push(args)
       },
     },
   }
@@ -62,12 +74,65 @@ test('apply registers exactly one /jev command and logs readiness', () => {
   assert.equal(typeof definition.handler, 'function')
   assert.match(definition.name, /^[a-z][a-z0-9_-]*$/)
   assert.ok(definition.description.trim().length > 0)
-  assert.equal(ctx.logs.length, 1)
+  assert.ok(ctx.logs.length >= 1, 'readiness is logged')
 })
 
 test('plugin exports the documented Cordis shape', () => {
   assert.equal(name, 'jev-router')
   assert.deepEqual(inject, ['commands'])
+})
+
+test('settings defaults are safe and self-consistent', () => {
+  const resolved = resolveSettings({})
+  assert.equal(resolved.autoRoute, true)
+  assert.equal(resolved.timeoutMs, 30000)
+  assert.equal(resolved.cacheSize, 32)
+  assert.equal(resolved.models.length, 3)
+  assert.equal(resolved.safeDefault.provider, 'opencode-go')
+})
+
+test('a model routed back into this plugin is refused', () => {
+  // Without this guard, JEV deciding to use `jev-router` would recurse forever.
+  const resolved = resolveSettings({
+    safeDefault: { provider: 'jev-router', model: 'auto' },
+    models: [
+      {
+        name: 'loop_model',
+        provider: 'jev-router',
+        model: 'auto',
+        capability: 'low',
+        taskTypes: ['coding'],
+        input: 0,
+        output: 0,
+      },
+      {
+        name: 'real_model',
+        provider: 'opencode-go',
+        model: 'qwen3.8-flash',
+        capability: 'medium',
+        taskTypes: ['coding'],
+        input: 0.15,
+        output: 0.47,
+      },
+    ],
+  })
+
+  assert.equal(resolved.safeDefault.provider, 'opencode-go')
+  assert.deepEqual(
+    resolved.models.map((entry) => entry.name),
+    ['real_model'],
+  )
+})
+
+test('autoRoute false is honoured', () => {
+  assert.equal(resolveSettings({ autoRoute: false }).autoRoute, false)
+})
+
+test('one malformed model entry falls back to the frozen defaults', () => {
+  const resolved = resolveSettings({
+    models: [{ name: 'broken', provider: 'opencode-go', capability: 'medium' }],
+  })
+  assert.equal(resolved.models.length, 3, 'an unusable table falls back wholesale')
 })
 
 test('a missing key file is reported as an error, never as a success', async () => {

@@ -1,8 +1,12 @@
 # dsh-plugin-jev-router bundle patch.
 #
-# Mounts the P0 observation-only probe and registers the `/jev` command.
-# The plugin never intercepts a model request, so this row cannot change what
-# an agent does or what a run costs.
+# Mounts two capabilities:
+#   * `/jev`      — observation-only JEV classification (P0)
+#   * `自动选择`   — a synthetic `jev-router/auto` model that routes each user
+#                   turn to a concrete configured model (P1)
+#
+# Routing is opt-in: nothing changes until the user selects "自动选择" in the
+# model picker.
 #
 # apiKeyFile is the ONE machine-specific value here. Replace it (or delete it
 # and set JEV_API_KEY_FILE in the launching environment) before sharing this
@@ -14,3 +18,9 @@
       config:
         apiKeyFile: '/Users/yhd/Desktop/apikey/pi agent jev.rtf'
         timeoutMs: 30000
+        # Set autoRoute: false to remove "自动选择" from the picker entirely.
+        autoRoute: true
+        # Model used when JEV cannot decide. Never the cheapest tier.
+        safeDefault:
+          provider: 'opencode-go'
+          model: 'gpt-5.6-luna'
