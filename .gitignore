@@ -12,3 +12,7 @@ benchmark/results/*.json
 .DS_Store
 
 benchmark/results/artifacts/
+# Adjust artifacts stay on this machine for integrity and hash checks; they are
+# deliberately not versioned. adjust_runs.jsonl is already covered by the
+# benchmark/results/*.jsonl rule above.
+benchmark/results/adjust_artifacts/

@@ -479,8 +479,94 @@
       "independent_review": "passed",
       "results_path": "benchmark/results/adjust_runs.jsonl",
       "artifacts_dir": "benchmark/results/adjust_artifacts",
-      "real_adjust_started": false,
-      "next_task": "task_003"
+      "real_adjust_started": true,
+      "next_task": "task_004",
+      "completed_adjust_tasks": [
+        {
+          "task_id": "task_003",
+          "attempt": 1,
+          "acceptance_status": "failed",
+          "route_status": "success",
+          "selected_model": "medium_model",
+          "jev_assessment": "reasonable",
+          "jev_audit_status": "reviewed",
+          "note": "Acceptance stays failed; JEV reasonableness is a separate dimension and does not upgrade acceptance."
+        }
+      ]
+    },
+    "jev_confidence_semantics_gate": {
+      "status": "phase1_approved_evidence_collection_only",
+      "gate_name": "JEV_CONFIDENCE_SEMANTICS_GATE",
+      "approved_option": "A",
+      "approved_scope": "evidence_collection_only",
+      "advisor_decision_date": "2026-10-01",
+      "target_sample_size": 20,
+      "sample_rule": "at least 20 independent real tasks accumulated through normal DeepSeek Harness use; never call JEV repeatedly just to reach the count; only the first real judgment per task counts",
+      "must_not_change": [
+        "confidence=min(...)",
+        "jev_confidence_threshold=0.70",
+        "frozen Pilot config",
+        "frozen Adjust config",
+        "historical Pilot / Adjust results",
+        "existing Router repeat behaviour"
+      ],
+      "record_per_task": [
+        "task_type_confidence",
+        "difficulty_score_confidence",
+        "difficulty_bucket_confidence",
+        "required_capability_confidence",
+        "risk_level_confidence",
+        "aggregate_confidence",
+        "task_type",
+        "difficulty_score",
+        "difficulty_bucket",
+        "required_capability",
+        "risk_level",
+        "reference_model",
+        "jev_tokens",
+        "jev_cost",
+        "jev_latency_ms"
+      ],
+      "option_status": {
+        "A": "approved",
+        "B": "pre_registered_candidate",
+        "C": "not_approved",
+        "D": "rejected"
+      },
+      "option_b_definition_correction": {
+        "initial_wording": "three choice primitives",
+        "correct_definition": "four choice primitives",
+        "choice_primitives": [
+          "task_type",
+          "difficulty_bucket",
+          "required_capability",
+          "risk_level"
+        ],
+        "score_primitives": [
+          "difficulty_score"
+        ],
+        "constraint": "confidence_choice_only may only be recorded, displayed, counted and compared; it must not participate in model selection, repeat, fallback or Go/Adjust/Stop until re-authorized after the 20-task sample"
+      },
+      "stop_condition": "after 20 independent real tasks, stop and resubmit to the chief advisor for review"
+    },
+    "task_backlog": {
+      "T-16": {
+        "status": "registered_not_started",
+        "title": "repeat trigger completeness must be derived from evidence",
+        "defect_location": "benchmark/official_pilot.py::_validate_repeat_triggers()",
+        "defect": "returns early for every task except task_003, so repeat_triggers completeness is not machine-checked elsewhere",
+        "goal": "remove the task_003-only trigger completeness special case and compute expected_repeat_triggers from real evidence",
+        "required_inputs": [
+          "classifier evidence",
+          "confidence threshold",
+          "difficulty boundary",
+          "fallback evidence",
+          "frozen repeat config"
+        ],
+        "required_invariant": "recorded_repeat_triggers == expected_repeat_triggers",
+        "required_regression_case": "confidence < 0.70 together with an unexpected_fallback, but only unexpected_fallback recorded; the check must fail because jev_confidence_below was omitted",
+        "blocker_status": "not a blocker for DSH P2 Budget Guard; must be completed before any new official Repeat Gate"
+      }
     }
   }
 }

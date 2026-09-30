@@ -144,7 +144,12 @@ risk_level           value=low            confidence=0.95
 以下只是候选方向，任何一条都需要先取得显式授权，并且**不得覆盖原始 Pilot 证据**：
 
 1. **保留原 `confidence` 字段不变**（它是与历史可比的口径），新增一个
-   `confidence_choice_only` 字段：只用三个 `choice` primitive 聚合，`score` 项单独记录。
+   `confidence_choice_only` 字段：只用**四个 `choice`** primitive 聚合
+   （`task_type`、`difficulty_bucket`、`required_capability`、`risk_level`），
+   `difficulty_score`（唯一的 `score` 项）单独记录。
+   > 初稿曾写作"三个 choice"，**该定义错误**；实际是 4 个 choice + 1 个 score。
+   > 总顾问裁决（2026-10-01）：本项列为**预注册候选**，
+   > 当前只允许记录/展示/统计/比较，不得参与选模、repeat、fallback 或 Go/Adjust/Stop。
 2. **把 `jev_confidence_below` 的判定改为按维度**：区分「能力档不确定」与「难度分不确定」，
    只有前者才触发重复——因为真正影响选模的是能力档，不是难度原始分。
 3. **先取证再改口径**：用适配器持续记录 `answer_confidences`，积累若干真实任务的五项分解，
