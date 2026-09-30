@@ -19,10 +19,12 @@ function fakeContext() {
   const registered = []
   const logs = []
   const warnings = []
-  return {
+  const injected = []
+  const ctx = {
     registered,
     logs,
     warnings,
+    injected,
     commands: {
       register(definition) {
         registered.push(definition)
@@ -35,6 +37,10 @@ function fakeContext() {
       },
     },
     on() {},
+    inject(deps, callback) {
+      injected.push({ deps, callback })
+      callback(ctx)
+    },
     logger: {
       info(...args) {
         logs.push(args)
@@ -44,6 +50,7 @@ function fakeContext() {
       },
     },
   }
+  return ctx
 }
 
 /** Minimal invocation carrying one session with the given last user text. */
@@ -126,6 +133,19 @@ test('a model routed back into this plugin is refused', () => {
 
 test('autoRoute false is honoured', () => {
   assert.equal(resolveSettings({ autoRoute: false }).autoRoute, false)
+})
+
+test('the auto route waits for the llm service instead of racing it', () => {
+  const ctx = fakeContext()
+  apply(ctx, {})
+
+  assert.equal(ctx.injected.length, 1, 'registration must go through ctx.inject')
+  assert.deepEqual(ctx.injected[0].deps, ['llm'])
+
+  const withoutLlm = fakeContext()
+  apply(withoutLlm, { autoRoute: false })
+  assert.equal(withoutLlm.injected.length, 0, 'a disabled route injects nothing')
+  assert.equal(withoutLlm.registered.length, 1, '/jev still registers')
 })
 
 test('one malformed model entry falls back to the frozen defaults', () => {

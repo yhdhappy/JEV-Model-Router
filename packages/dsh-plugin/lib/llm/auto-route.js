@@ -4,12 +4,22 @@
  * Design decisions worth stating explicitly:
  *
  * 1. **The `llm/stream` waterfall does the rerouting, not the adapter.**
- *    `LlmRuntime.adapterStream()` runs `forAdapter()` before dispatch, which
- *    strips `source.replayState` from history owned by another adapter. A
- *    synthetic adapter that re-dispatches therefore loses replay state; a
- *    waterfall listener sees the untouched request and re-dispatches straight
- *    to the real adapter, so replay state survives. The same listener is also
- *    the last point that can still see the original provider/model.
+ *    `LlmRuntime.adapterStream()` projects the request (file handles, image
+ *    placeholders, tool-update declarations) against the *target adapter's*
+ *    model metadata before dispatch. Reaching the real model through the
+ *    synthetic adapter would therefore project twice — the first pass using
+ *    the synthetic model's metadata, which is not the model that will actually
+ *    run. A waterfall listener sees the untouched request, so the inner call
+ *    projects exactly once, against the real model. It also leaves history the
+ *    user produced by selecting the real provider directly eligible for replay.
+ *
+ *    Caveat, verified in `dsh-agent-loop`: history written by a routed turn
+ *    records `source.provider = "jev-router"`, and `forAdapter()` strips replay
+ *    state whose `source.provider` belongs to another adapter. So replay state
+ *    for routed history is dropped on the inner dispatch under *either*
+ *    design; only rewriting each message's `source` could preserve it, which
+ *    P1 deliberately does not do. The cost is provider-native fidelity, not
+ *    correctness.
  *
  * 2. **The adapter exists only so the picker can show `auto`.** `listModels`
  *    and `resolveModel` are required for catalog-driven entry points; the
@@ -30,6 +40,11 @@
  * 5. **Fail safe, never fail closed.** A JEV failure falls back to a
  *    configured safe default — never to the cheapest tier — matching the
  *    frozen stage-1 rule. The user's turn is never blocked by this plugin.
+ *
+ * 6. **The decision log is the only record of the real model.** A rewrite at
+ *    the `llm/stream` layer never reaches the session log, so `model/selection`
+ *    and `assistant/message.source` keep saying `jev-router/auto`. This log is
+ *    therefore load-bearing, not a convenience.
  *
  * @module dsh-plugin-jev-router/llm/auto-route
  */

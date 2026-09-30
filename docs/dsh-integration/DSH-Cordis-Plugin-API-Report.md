@@ -1447,3 +1447,18 @@ export function apply(ctx) {
 - **bundle 的 `dsh.client` 字段语义**：本报告未展开（那是 Client/UI 插件范畴），
   仅证据到 `references/host-plugin.md` 与 `templates/decoration/package.json` 中出现的
   `"dsh": { "client": { "platform": "web", "immediately": true, "inject": [...] } }`。
+
+---
+
+## 附：取证工具勘误（2026-09-30 补记）
+
+本报告取证时使用的 asar 读取脚本，其数据区起点公式 `BASE = 16 + json_size` **比正确值少 2 字节**。
+后果是：每个文件被读成「前一文件末 2 字节 + 自身前 size−2 字节」，**首行被污染、末尾 2 字节丢失**
+（例如某 README 首行读成 `5` 而非 `---`）。
+
+正确公式为 `BASE = 8 + pickle_size`，已实测：该起点能读出干净的 `---`。
+
+**对本报告结论的影响**：污染只发生在**每个文件的开头**，正文不受影响；本报告引用的均为正文片段，
+逐条抽查未发现受污染的首行。**若后续有人复用本报告的引用，建议先用修正后的脚本重新取证一次。**
+
+接口级的详细复核见同目录 `DSH-LlmAdapter-接口调研报告_v1.md`。

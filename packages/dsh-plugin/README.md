@@ -78,18 +78,48 @@ JEV Router → 自动选择（JEV 智能路由）
 | 决定 | 原因 |
 |---|---|
 | **按"用户轮次"路由，不是按请求** | 一轮对话包含很多次模型请求（工具往返）。若每次都判定，既给每一步加税，又会在轮次中途换模型，破坏缓存与上下文连续性。 |
-| **走 `llm/stream` 瀑布监听器，而不是合成适配器内部转发** | `LlmRuntime.adapterStream()` 会在派发前调用 `forAdapter()`，把**不属于当前适配器**的历史 replay state 剥掉。合成适配器转发会丢掉它；瀑布监听器看到的是未被改写的原始请求，直接重派给真实适配器，**replay state 得以保留**。 |
+| **走 `llm/stream` 瀑布监听器，而不是合成适配器内部转发** | `adapterStream()` 会在派发前按**目标适配器的模型元数据**做一次投影（文件句柄、图片占位、tool 更新声明）。经由合成适配器到达真实模型会被**投影两次**，且第一层用的是合成模型的元数据——那不是真正要跑的模型。瀑布监听器看到的是未被投影的原始请求，内层只按真实模型投影一次。另外，用户**直接**选用真实 provider 产生的历史，其 replay state 在瀑布路径下才保留。 |
 | **合成适配器只负责让选择器显示 `auto`** | `listModels` / `resolveModel` 是目录驱动界面的硬要求；适配器自身的 `stream` 只是瀑布未生效时的兜底路径。 |
+| **用 `ctx.inject(['llm'], …)` 等待 LLM 服务** | 不这样写会与插件激活顺序赛跑：若 `apply` 跑在 `llm` 挂载之前，自动路由会被静默跳过。`inject` 让子 fiber 挂起直到服务就绪，而 `/jev` 不受影响、始终可用。 |
 | **`inputModalities` 必须声明 image** | 真实路由支持图片。若声明为纯文本，运行时会**在插件看到请求之前**把所有图片替换成占位符。 |
+| **不声明 `reasoning` / `defaultMaxTokens`** | 声明 `reasoning` 会强制启用 effort 校验并写入会话选择；`defaultMaxTokens` 会被物化进请求并**转发给真实模型**，等于替真实模型定了输出上限。两个都不声明，转发时也就没有需要清理的残留。 |
 | **判定失败 → 回退到 safe default，绝不回退到最便宜档** | 沿用已冻结的阶段 1 规则。插件永远不会因为自己出错而卡住你的对话。 |
 | **相同任务文本只判定一次** | 有界缓存（默认 32 条），避免重复轮次重复付费。 |
+
+### ⚠️ 一个重要事实：会话日志看不到真实模型
+
+在 `llm/stream` 这一层的改写**不会进入会话日志**。日志里的 `model/selection`、`request/header`、
+`request/context`、`assistant/message.source` **全都是 `jev-router/auto`**，无法据此反查这一轮
+真正用了哪个模型。
+
+因此 **`~/.dsh/jev-router/decisions.jsonl` 是唯一的真相来源**，不是可选的便利功能：
+
+```bash
+# 看最近这次路由到底用了什么模型、为什么
+tail -1 ~/.dsh/jev-router/decisions.jsonl | python3 -m json.tool
+```
+
+想让"换模型"本身进入会话日志，必须在 **agent 作用域的 `agent/request` 瀑布**里换，
+而不是 `llm/stream`。那属于 P2。
+
+### 已知的保真度妥协：replay state
+
+`dsh-agent-loop` 记录历史时写入的是 `source: { provider: request.provider, model: request.model, replayState }`，
+而经本插件路由的轮次里 `request.provider` 就是 `jev-router`。`forAdapter()` 会剥离
+`source.provider` 不属于当前适配器的 replay state——**所以路由历史在本设计下会被剥离**
+（换成合成适配器同样会被剥离，两条路后果一致）。
+
+唯一能保住的办法是在转发前逐条改写消息副本的 `source`，但 pi-ai 会校验这两个字段、
+deepseek 适配器在不匹配时直接抛 `INVALID_REPLAY_STATE`，风险高于收益。**P1 接受这个损失**：
+它影响的是 provider 原生保真度（例如推理签名），不影响正确性。
 
 ### 这一版**还没有**的东西
 
 - **没有模型 fallback 链**：一轮内换模型在流式输出开始后不是安全的本地决策，本版交给 DSH 已有的重试机制处理。
 - **没有 Budget Guard**：单任务预算上限尚未接入。
 - **没有轻量规则层**：每次都调 JEV。按当前价格这是 $0.00003/次，成本上可忽略；主要代价是每轮首次请求约 +750 ms 延迟。
-- **没有界面展示**：路由原因目前只写进决策日志，尚未在界面显示。
+- **没有界面展示**：路由原因只写进决策日志（而且如上所述，会话日志里也看不到），尚未在界面显示。
+- **replay state 会被剥离**：见上文"已知的保真度妥协"。
 
 以上都属于 P2。
 

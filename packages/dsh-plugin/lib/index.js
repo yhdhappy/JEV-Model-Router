@@ -69,20 +69,22 @@ export function apply(ctx, config = {}) {
     handler: (invocation) => runJevCommand(invocation, settings),
   })
 
-  if (settings.autoRoute && typeof ctx.llm?.registerAdapter === 'function') {
-    registerAutoRoute(ctx, settings, {
-      log: logger,
-      recordDecision,
+  if (settings.autoRoute) {
+    // Wait for the LLM service rather than racing plugin activation order:
+    // `ctx.inject` starts a child fiber that stays pending until `llm` exists,
+    // so `自动选择` is never silently skipped when the service mounts later.
+    // `/jev` above keeps working either way.
+    ctx.inject(['llm'], (llmCtx) => {
+      registerAutoRoute(llmCtx, settings, {
+        log: logger,
+        recordDecision,
+      })
     })
-  } else if (settings.autoRoute) {
-    logger.warn(
-      'jev-router: the LLM service is unavailable, so "自动选择" was not registered',
-    )
   }
 
   logger.info(
     'jev-router ready: /jev registered; auto route %s; key file %s',
-    settings.autoRoute ? 'enabled' : 'disabled',
+    settings.autoRoute ? 'requested' : 'disabled',
     settings.apiKeyFile ? 'configured' : 'NOT configured',
   )
 }
