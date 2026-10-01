@@ -179,7 +179,21 @@ deepseek 适配器在不匹配时直接抛 `INVALID_REPLAY_STATE`，风险高于
   预算守卫直接拒绝并记 `budget_estimate_unavailable`，而不是按 `estimated_next_max_cost = 0` 放行。
 
 决策日志新增字段：`budget_limit`、`budget_exposure_before`、`estimated_next_max_cost`、
-`budget_allowed`、`budget_error`、`cost_estimated`、`cost_estimation_source`。
+`budget_allowed`、`budget_error`、`cost_estimated`、`cost_estimation_source`、
+`budget_classifier_charge`、`jev_cache_hit`。
+
+### `jev_called` 与 `jev_cache_hit` 的区别（取证要点）
+
+这两个字段必须分清，否则 20 个真实任务的取证会把缓存当成新调用：
+
+| 场景 | `jev_called` | `jev_cache_hit` | 分类器计费 |
+|---|---|---|---|
+| 本轮真正调用了 JEV | `true` | `false` | JEV 精确成本 |
+| 同一轮后续步骤复用已选路由 | `false` | `false` | 0 |
+| 新的一轮但命中分类缓存 | `false` | **`true`** | **0** |
+| 命中轻量规则 | `false` | `false` | 0 |
+
+规则：**只有本次真的发起 JEV API 调用，才算 `jev_called=true` 并计入成本**。
 
 ### 这一版**还没有**的东西
 

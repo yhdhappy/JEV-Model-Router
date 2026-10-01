@@ -244,9 +244,11 @@ async function* routeStream(ctx, options, settings, state, deps, origin) {
     reused: decision.reused === true,
     relaxed_task_type: decision.relaxedTaskType === true,
     rule_id: decision.ruleId ?? null,
-    // Whether JEV was actually consulted. A light-rule turn costs nothing to
-    // classify, and the log must not imply otherwise.
-    jev_called: decision.jevCalled !== false,
+    // Whether JEV was actually consulted on THIS request. A light-rule turn
+    // and a classifier cache hit both cost nothing to classify, and the log
+    // must not imply a fresh API call that never happened.
+    jev_called: decision.jevCalled === true,
+    jev_cache_hit: decision.jevCacheHit === true,
     classifier: decision.classifier ?? null,
     answer_confidences: decision.answerConfidences ?? null,
     jev_cost: decision.jevCost ?? null,
@@ -345,7 +347,11 @@ function applyBudgetGuard(options, settings, state, decision, isNewTurn) {
     return { allowed: false, record, turnKey: key }
   }
 
-  const classifierCharge = decision.reused === true ? 0 : (decision.jevCost ?? 0)
+  // Charge the classifier only when this request actually called JEV. Route
+  // reuse (`reused`) is a different question: it says the turn kept its chosen
+  // model, and a brand-new turn can still score a classifier cache hit without
+  // spending anything. Conflating the two double-charged cached classifications.
+  const classifierCharge = decision.jevCalled === true ? (decision.jevCost ?? 0) : 0
   const exposure = turn.spent + classifierCharge
 
   const verdict = checkBudget(exposure, estimated, limit)
@@ -353,6 +359,9 @@ function applyBudgetGuard(options, settings, state, decision, isNewTurn) {
   record.budget_allowed = verdict.allowed
   record.budget_error = verdict.error_code
   record.budget_turn_key = key
+  // Recorded on every path, so a blocked step still shows it charged nothing
+  // rather than leaving the field absent.
+  record.budget_classifier_charge = classifierCharge
 
   if (!verdict.allowed) return { allowed: false, record, turnKey: key }
 
@@ -365,7 +374,6 @@ function applyBudgetGuard(options, settings, state, decision, isNewTurn) {
     source: 'estimated_max',
   })
   record.budget_exposure_after = turn.spent
-  record.budget_classifier_charge = classifierCharge
   return { allowed: true, record, turnKey: key }
 }
 
@@ -400,13 +408,34 @@ async function resolveRoute(options, settings, state, deps) {
 
   if (!opening && sessionId !== undefined) {
     const held = state.heldRoutes.get(sessionId)
-    if (held !== undefined) return { ...held, reused: true }
+    if (held !== undefined) {
+      // Reuse means this step classified nothing: the turn already decided.
+      // Carrying the held `jevCalled`/`jevCost` forward would charge the
+      // classifier again on every tool round-trip of the same turn.
+      return {
+        ...held,
+        reused: true,
+        jevCalled: false,
+        jevCacheHit: false,
+        jevCost: null,
+        jevLatencyMs: null,
+      }
+    }
   }
 
   const task = latestUserText(messages)
   if (task.length === 0) {
     const held = sessionId !== undefined ? state.heldRoutes.get(sessionId) : undefined
-    if (held !== undefined) return { ...held, reused: true }
+    if (held !== undefined) {
+      return {
+        ...held,
+        reused: true,
+        jevCalled: false,
+        jevCacheHit: false,
+        jevCost: null,
+        jevLatencyMs: null,
+      }
+    }
     return hold(state, sessionId, {
       source: 'safe_default',
       provider: settings.safeDefault.provider,
@@ -435,6 +464,7 @@ async function resolveRoute(options, settings, state, deps) {
         jevCost: null,
         jevLatencyMs: null,
         jevCalled: false,
+        jevCacheHit: false,
       }
     : {
         ruleId: null,
@@ -442,7 +472,11 @@ async function resolveRoute(options, settings, state, deps) {
         answerConfidences: classified.answer_confidences,
         jevCost: classified.metrics?.exact_cost ?? null,
         jevLatencyMs: classified.metrics?.latency_ms ?? null,
-        jevCalled: true,
+        // A cache hit reused an earlier result: JEV was not called again, and
+        // no new cost was incurred. The cached metrics are still carried for
+        // context, but they must not be charged a second time.
+        jevCalled: classified.cache_hit !== true,
+        jevCacheHit: classified.cache_hit === true,
       }
 
   // A safe default is a decision like any other: it must be held for the rest
@@ -512,15 +546,21 @@ function hold(state, sessionId, decision, turnText = '') {
 /**
  * Classify one task, reusing a recent identical classification.
  *
+ * The result records whether this call actually reached JEV. That distinction
+ * cannot be inferred from route reuse: a brand-new user turn can still hit the
+ * classifier cache, and a cache hit spends nothing. Logging a cache hit as a
+ * fresh JEV call — and charging its cost again — would corrupt the evidence
+ * collected for JEV_CONFIDENCE_SEMANTICS_GATE.
+ *
  * @param task - the task text.
  * @param settings - resolved plugin settings.
  * @param state - per-fiber turn state.
  * @param classify - the classifier call to use.
- * @returns the classifier outcome.
+ * @returns the classifier outcome plus `cache_hit`.
  */
 async function classifyCached(task, settings, state, classify) {
   const cached = state.cache.get(task)
-  if (cached !== undefined) return cached
+  if (cached !== undefined) return { ...cached, cache_hit: true }
 
   const outcome = await classify({
     prompt: task,
@@ -528,13 +568,14 @@ async function classifyCached(task, settings, state, classify) {
     timeoutMs: settings.timeoutMs,
   })
 
-  state.cache.set(task, outcome)
+  const stored = { ...outcome, cache_hit: false }
+  state.cache.set(task, stored)
   // Bounded: the cache exists to absorb repeated identical turns, not to grow.
   if (state.cache.size > settings.cacheSize) {
     const oldest = state.cache.keys().next().value
     state.cache.delete(oldest)
   }
-  return outcome
+  return stored
 }
 
 /**

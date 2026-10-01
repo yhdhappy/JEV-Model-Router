@@ -772,6 +772,7 @@ test('budget: exposure accumulates across the tool round-trips of one turn', asy
 
   assert.equal(records[0].budget_exposure_before, 0.000004, 'only the classifier cost at first')
   assert.ok(records[0].budget_allowed)
+  // Step 1 charged its classifier call plus the medium estimate.
   assert.equal(records[1].budget_exposure_before, 0.250004, 'the second step sees the first')
   assert.ok(records[1].budget_allowed)
   assert.equal(ctx.captured.streams.length, 2)
@@ -887,12 +888,11 @@ test('budget: a repeated prompt in the same session still opens a new turn', asy
   await call(userTurn('same task'))
 
   assert.equal(records.length, 2)
-  assert.equal(records[0].budget_exposure_before, 0.000004, 'turn 1 starts from zero')
-  assert.equal(
-    records[1].budget_exposure_before,
-    0.000004,
-    'turn 2 must also start from zero, not inherit turn 1 execution exposure',
-  )
+  assert.equal(records[0].budget_exposure_before, 0.000004, 'turn 1 paid for its classifier call')
+  // Turn 2 is a fresh account AND a classifier cache hit, so it starts at a
+  // true zero: no inherited execution exposure and no re-charged JEV cost.
+  assert.equal(records[1].budget_exposure_before, 0)
+  assert.equal(records[1].jev_cache_hit, true)
   assert.equal(records[1].budget_allowed, true)
   assert.equal(ctx.captured.streams.length, 2, 'both turns reached the provider')
 })
@@ -960,4 +960,130 @@ test('budget: a known safeDefault is still estimated and still guarded', async (
   assert.equal(records[0].estimated_next_max_cost, 1.0, 'gpt-5.6-luna is a high tier')
   assert.equal(records[0].budget_allowed, true)
   assert.equal(ctx.captured.streams.length, 1)
+})
+
+test('budget: a classifier cache hit is not charged again and is labelled honestly', async () => {
+  // Field defect: the classifier charge keyed on route reuse, so a new turn
+  // that hit the classifier cache re-charged the previous turn's JEV cost and
+  // logged jev_called=true for an API call that never happened. That would
+  // corrupt the evidence collected for JEV_CONFIDENCE_SEMANTICS_GATE.
+  const ctx = fakeContext()
+  const records = []
+  const calls = { count: 0 }
+  registerAutoRoute(ctx, settings({ budgetLimit: 1.5 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier(calls),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  const call = (messages) =>
+    drain(
+      listener.listener(
+        { provider: 'jev-router', model: 'auto', sessionId: 'cache', messages },
+        () => {},
+      ),
+    )
+
+  // Turn 1 actually calls JEV.
+  await call(userTurn('same task'))
+  // Turn 2 is a genuinely new turn with identical text: a cache hit, no API call.
+  await call(userTurn('same task'))
+
+  assert.equal(calls.count, 1, 'JEV is called once; the second turn hits the cache')
+
+  assert.deepEqual(
+    records.map((record) => record.jev_called),
+    [true, false],
+    'only the first turn actually consulted JEV',
+  )
+  assert.deepEqual(
+    records.map((record) => record.jev_cache_hit),
+    [false, true],
+    'the second turn is recorded as a cache hit',
+  )
+  assert.equal(records[0].budget_classifier_charge, 0.000004, 'the exact JEV cost, 6dp')
+  assert.equal(records[1].budget_classifier_charge, 0, 'a cache hit costs nothing')
+
+  // Budget reset and classifier cache reuse are independent facts: turn 2 opens
+  // a fresh account AND still must not carry the cached JEV cost into it.
+  assert.equal(records[1].budget_exposure_before, 0)
+  assert.equal(records[1].budget_allowed, true)
+  assert.equal(ctx.captured.streams.length, 2, 'both turns reached the provider')
+})
+
+test('budget: a cached classification still routes on the cached result', async () => {
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(ctx, settings({ budgetLimit: 1.5 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier({ count: 0 }),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  const call = (sessionId, messages) =>
+    drain(
+      listener.listener({ provider: 'jev-router', model: 'auto', sessionId, messages }, () => {}),
+    )
+
+  await call('cache-a', userTurn('repeated wording'))
+  await call('cache-b', userTurn('repeated wording'))
+
+  // A cache hit still yields a real classifier result, so the model choice is
+  // unchanged; only the accounting and the JEV-call evidence differ.
+  assert.deepEqual(
+    ctx.captured.streams.map((entry) => entry.model),
+    ['qwen3.8-flash', 'qwen3.8-flash'],
+  )
+  assert.ok(records[1].classifier, 'the cached classification is still reported')
+  assert.equal(records[1].jev_cache_hit, true)
+})
+
+test('budget: the classifier is charged once per turn, never per step', async () => {
+  // Second field defect: a reused held route carried the turn's jevCalled and
+  // jevCost forward, so every tool round-trip of one turn re-reported a JEV call
+  // that did not happen and charged the classifier again.
+  const ctx = fakeContext()
+  const records = []
+  const calls = { count: 0 }
+  registerAutoRoute(ctx, settings({ budgetLimit: 0.6 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier(calls),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  const call = (messages) =>
+    drain(
+      listener.listener(
+        { provider: 'jev-router', model: 'auto', sessionId: 'once', messages },
+        () => {},
+      ),
+    )
+
+  await call(userTurn('multi step task'))
+  await call(toolStep())
+  await call(toolStep())
+
+  assert.equal(calls.count, 1, 'JEV is consulted once for the whole turn')
+  assert.deepEqual(
+    records.map((record) => record.jev_called),
+    [true, false, false],
+    'only the step that classified reports a JEV call',
+  )
+  assert.deepEqual(
+    records.map((record) => record.budget_classifier_charge),
+    [0.000004, 0, 0],
+    'the classifier is charged exactly once',
+  )
+  assert.deepEqual(
+    records.map((record) => record.reused),
+    [false, true, true],
+    'the later steps are genuine route reuse',
+  )
+  // Execution exposure still accumulates across the turn.
+  assert.equal(records[1].budget_exposure_before, 0.250004)
+  assert.equal(records[2].budget_exposure_before, 0.500004)
+  assert.equal(ctx.captured.streams.length, 2, 'the third step was blocked by the ceiling')
 })
