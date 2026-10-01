@@ -32,16 +32,24 @@
  *    reuse and replay continuity. The chosen route is held for the rest of the
  *    turn and re-decided only when a new user message arrives.
  *
- * 4. **Routing only; no fallback chain and no budget guard yet.** Model
- *    fallback and Budget Guard stay with the host's existing retry path in
- *    this stage, because switching models after a stream has emitted chunks is
- *    not a safe local decision.
+ * 4. **No model fallback chain.** Switching models after a stream has emitted
+ *    chunks is not a safe local decision, so recovery stays with the host's
+ *    existing retry path. Budget Guard *is* implemented: it runs on the last
+ *    boundary before dispatch and refuses a call outright rather than
+ *    substituting a cheaper model.
  *
- * 5. **Fail safe, never fail closed.** A JEV failure falls back to a
+ * 5. **Cost is conservative, not reconciled.** Provider execution exposure uses
+ *    the configured `estimated_max` per capability tier; this stage does not
+ *    replace it with the provider's actual reported cost. The estimate can only
+ *    over-count, never under-count, so the ceiling stays safe.
+ *
+ * 6. **Fail safe, never fail closed.** A JEV failure falls back to a
  *    configured safe default — never to the cheapest tier — matching the
- *    frozen stage-1 rule. The user's turn is never blocked by this plugin.
+ *    frozen stage-1 rule. The safe default still passes Budget Guard, and an
+ *    unregistered route is refused rather than assumed to be free. The user's
+ *    turn is never blocked by this plugin except by an explicit budget refusal.
  *
- * 6. **The decision log is the only record of the real model.** A rewrite at
+ * 7. **The decision log is the only record of the real model.** A rewrite at
  *    the `llm/stream` layer never reaches the session log, so `model/selection`
  *    and `assistant/message.source` keep saying `jev-router/auto`. This log is
  *    therefore load-bearing, not a convenience.
@@ -53,6 +61,7 @@ import { JevError, classifyJev } from '../jev/classifier.js'
 import { NoEligibleModelError, decideRouteForSettings } from '../jev/policy.js'
 import { classifierFromRule, evaluateLightweightRules } from '../jev/rules.js'
 import {
+  BUDGET_ESTIMATE_UNAVAILABLE,
   BUDGET_LIMIT_REACHED,
   BudgetLedger,
   checkBudget,
@@ -192,6 +201,12 @@ export function registerAutoRoute(ctx, settings, deps) {
  */
 async function* routeStream(ctx, options, settings, state, deps, origin) {
   const { log, recordDecision } = deps
+
+  // Whether this request opens a new user turn is a property of the request
+  // itself, not of whether a route happened to be reused: a repeated prompt is
+  // still a new turn and must start a fresh budget account.
+  const guardIsNewTurn = isNewUserTurn(options?.messages ?? [])
+
   let decision
   try {
     decision = await resolveRoute(options, settings, state, deps)
@@ -201,6 +216,7 @@ async function* routeStream(ctx, options, settings, state, deps, origin) {
       source: 'safe_default',
       provider: settings.safeDefault.provider,
       model: settings.safeDefault.model,
+      turnText: latestUserText(options?.messages ?? []),
       reason: [`routing failed: ${describe(error)}`],
       error: describe(error),
     }
@@ -210,7 +226,7 @@ async function* routeStream(ctx, options, settings, state, deps, origin) {
   // without calling `next()` means the provider request is never made, which is
   // what makes this a spending-prevention mechanism rather than an accounting
   // one. The classifier's own cost is charged to the same turn account.
-  const guard = applyBudgetGuard(options, settings, state, decision)
+  const guard = applyBudgetGuard(options, settings, state, decision, guardIsNewTurn)
 
   const forwarded = { ...options, provider: decision.provider, model: decision.model }
   if (forwarded.reasoningEffort === undefined) delete forwarded.reasoningEffort
@@ -243,16 +259,18 @@ async function* routeStream(ctx, options, settings, state, deps, origin) {
   if (!guard.allowed) {
     // The provider must not be called. Emit one terminal error chunk, the same
     // shape the runtime itself uses for a refused call, and stop.
+    const message =
+      guard.record.budget_error === BUDGET_ESTIMATE_UNAVAILABLE
+        ? `无法估算 ${decision.provider}/${decision.model} 的费用上限，预算守卫拒绝放行` +
+          `（未登记的模型不会被当成零成本）。`
+        : `预算上限已达到：本次已累计 $${guard.record.budget_exposure_before}，` +
+          `下一模型预计最高 $${guard.record.estimated_next_max_cost}，` +
+          `上限 $${guard.record.budget_limit}`
     yield {
       type: 'finish',
       reason: {
         kind: 'error',
-        failure: {
-          code: BUDGET_LIMIT_REACHED,
-          message: `预算上限已达到：本次已累计 $${guard.record.budget_exposure_before}，` +
-            `下一模型预计最高 $${guard.record.estimated_next_max_cost}，` +
-            `上限 $${guard.record.budget_limit}`,
-        },
+        failure: { code: guard.record.budget_error, message },
       },
     }
     return
@@ -264,17 +282,29 @@ async function* routeStream(ctx, options, settings, state, deps, origin) {
 /**
  * Evaluate the per-turn budget for the model about to be called.
  *
+ * Two rules matter here and are easy to get wrong:
+ *
+ * 1. A new user turn **always opens a fresh account**, even when the user types
+ *    exactly the same text as last time. Keying the account on the session plus
+ *    the opening text alone made a repeated prompt inherit the previous turn's
+ *    spend.
+ * 2. An unknown route is never treated as free. If the model about to run has
+ *    no configured estimate, the guard refuses rather than assuming zero,
+ *    because assuming zero would let any unregistered (possibly expensive)
+ *    model through a ceiling.
+ *
  * @param options - the original call options.
  * @param settings - resolved plugin settings.
  * @param state - per-fiber turn state.
  * @param decision - the resolved route.
+ * @param isNewTurn - whether this request opens a new user turn.
  * @returns `{ allowed, record, turnKey }`.
  */
-function applyBudgetGuard(options, settings, state, decision) {
+function applyBudgetGuard(options, settings, state, decision, isNewTurn) {
   const limit = settings.budgetLimit
   const capability = capabilityOf(settings.models, decision.provider, decision.model)
   const estimated = capability === null
-    ? 0
+    ? null
     : estimateMaxCost(capability, settings.estimatedMaxCosts)
 
   const record = {
@@ -284,7 +314,8 @@ function applyBudgetGuard(options, settings, state, decision) {
     budget_allowed: true,
     budget_error: null,
     // Estimated by construction: a provider's real cost is only known after it
-    // answers, so the guard must reason from the configured ceiling.
+    // answers, so the guard reasons from the configured ceiling. Provider
+    // actual-cost reconciliation is not implemented in this stage.
     cost_estimated: true,
     cost_estimation_source: 'estimated_max',
     budget_turn_key: null,
@@ -297,11 +328,23 @@ function applyBudgetGuard(options, settings, state, decision) {
   }
 
   const key = turnKey(options?.sessionId, decision.turnText ?? '')
-  const turn = state.budget.peek(key) ?? state.budget.openTurn(key)
 
-  // The classifier is paid for once per turn, on the step that actually
-  // classified. Later steps of the same turn reuse the held route, so charging
-  // `jevCost` again would invent spend that never happened.
+  // A new user turn resets the account even when the opening text repeats,
+  // because these are two different tasks from the user's point of view.
+  const turn = isNewTurn ? state.budget.openTurn(key) : (state.budget.peek(key) ?? state.budget.openTurn(key))
+
+  // An unregistered route has no ceiling to reason about. Refusing is the only
+  // safe answer: assume-zero would silently disable the guard for it.
+  if (estimated === null) {
+    record.budget_allowed = false
+    record.budget_error = BUDGET_ESTIMATE_UNAVAILABLE
+    record.budget_exposure_before = turn.spent
+    record.budget_turn_key = key
+    record.cost_estimated = false
+    record.cost_estimation_source = null
+    return { allowed: false, record, turnKey: key }
+  }
+
   const classifierCharge = decision.reused === true ? 0 : (decision.jevCost ?? 0)
   const exposure = turn.spent + classifierCharge
 
@@ -314,8 +357,8 @@ function applyBudgetGuard(options, settings, state, decision) {
   if (!verdict.allowed) return { allowed: false, record, turnKey: key }
 
   // Commit this call's ceiling into the turn account before dispatch, so a
-  // later step of the same turn sees it. The provider's real cost replaces the
-  // estimate after a successful call.
+  // later step of the same turn sees it. This stage keeps the conservative
+  // estimate; it does not reconcile against the provider's reported cost.
   state.budget.charge(key, {
     classifier: classifierCharge,
     execution: estimated,

@@ -860,3 +860,104 @@ test('budget: parent, child and sibling sessions keep separate accounts', async 
     'a sibling also starts from zero',
   )
 })
+
+test('budget: a repeated prompt in the same session still opens a new turn', async () => {
+  // Field defect: keying the account on session + opening text alone made a
+  // second turn that repeated the same wording inherit the first turn's spend.
+  const ctx = fakeContext()
+  const records = []
+  const calls = { count: 0 }
+  registerAutoRoute(ctx, settings({ budgetLimit: 1.5 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: stubClassifier(calls),
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  const call = (messages) =>
+    drain(
+      listener.listener(
+        { provider: 'jev-router', model: 'auto', sessionId: 'same', messages },
+        () => {},
+      ),
+    )
+
+  await call(userTurn('same task'))
+  // A genuinely new user turn, with byte-identical text.
+  await call(userTurn('same task'))
+
+  assert.equal(records.length, 2)
+  assert.equal(records[0].budget_exposure_before, 0.000004, 'turn 1 starts from zero')
+  assert.equal(
+    records[1].budget_exposure_before,
+    0.000004,
+    'turn 2 must also start from zero, not inherit turn 1 execution exposure',
+  )
+  assert.equal(records[1].budget_allowed, true)
+  assert.equal(ctx.captured.streams.length, 2, 'both turns reached the provider')
+})
+
+test('budget: an unknown route is never treated as free', async () => {
+  // Field defect: an unregistered safeDefault produced estimated_next_max_cost
+  // of 0 and was dispatched straight through a $0.01 ceiling.
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(
+    ctx,
+    settings({
+      budgetLimit: 0.01,
+      safeDefault: { provider: 'other-provider', model: 'expensive-model' },
+    }),
+    {
+      log: ctx.logger,
+      recordDecision: async (path, record) => records.push(record),
+      classify: async () => {
+        throw new Error('jev is down')
+      },
+    },
+  )
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  const chunks = await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'unknown', messages: userTurn('anything') },
+      () => {},
+    ),
+  )
+
+  assert.equal(records[0].route_source, 'safe_default')
+  assert.equal(records[0].estimated_next_max_cost, null, 'no estimate is invented')
+  assert.equal(records[0].budget_allowed, false)
+  assert.equal(records[0].budget_error, 'budget_estimate_unavailable')
+  assert.equal(ctx.captured.streams.length, 0, 'THE PROVIDER MUST NOT BE CALLED')
+  assert.equal(chunks.length, 1)
+  assert.equal(chunks[0].reason.failure.code, 'budget_estimate_unavailable')
+})
+
+test('budget: a known safeDefault is still estimated and still guarded', async () => {
+  // The counterpart to the case above: a registered safeDefault keeps working
+  // and is measured, so the fix does not simply refuse everything it cannot
+  // recognise by accident.
+  const ctx = fakeContext()
+  const records = []
+  registerAutoRoute(ctx, settings({ budgetLimit: 1.5 }), {
+    log: ctx.logger,
+    recordDecision: async (path, record) => records.push(record),
+    classify: async () => {
+      throw new Error('jev is down')
+    },
+  })
+  const listener = ctx.captured.listeners.find((entry) => entry.event === 'llm/stream')
+
+  await drain(
+    listener.listener(
+      { provider: 'jev-router', model: 'auto', sessionId: 'known', messages: userTurn('anything') },
+      () => {},
+    ),
+  )
+
+  assert.equal(records[0].route_source, 'safe_default')
+  assert.equal(records[0].estimated_next_max_cost, 1.0, 'gpt-5.6-luna is a high tier')
+  assert.equal(records[0].budget_allowed, true)
+  assert.equal(ctx.captured.streams.length, 1)
+})

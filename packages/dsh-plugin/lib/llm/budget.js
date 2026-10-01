@@ -26,6 +26,14 @@ export const DEFAULT_ESTIMATED_MAX_COSTS = Object.freeze({
 /** Stable error code shared with the frozen Router vocabulary. */
 export const BUDGET_LIMIT_REACHED = 'budget_limit_reached'
 
+/**
+ * Raised when the route about to run has no configured cost estimate.
+ *
+ * An unknown route is never assumed to be free: doing so would silently
+ * disable the ceiling for exactly the models nobody vetted.
+ */
+export const BUDGET_ESTIMATE_UNAVAILABLE = 'budget_estimate_unavailable'
+
 /** Decimal places kept when normalizing money, matching the $0.000001 log scale. */
 const SCALE = 1_000_000
 

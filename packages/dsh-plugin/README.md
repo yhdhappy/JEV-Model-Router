@@ -167,6 +167,17 @@ deepseek 适配器在不匹配时直接抛 `INVALID_REPLAY_STATE`，风险高于
 成本来源明确区分：模型调用前用配置的保守估算上限（`cost_estimation_source: "estimated_max"`），
 **不把估算冒充真实成本**。JEV 用的是它自己返回的精确成本。
 
+> **当前阶段的明确边界**：Provider 执行开销**只使用保守估算上限，尚未做真实成本对账**。
+> 这只会高估、不会低估，所以上限本身是安全的；但不要把它当成账单数据。
+> 真实成本对账属于后续阶段。
+
+两条容易被忽视的规则：
+
+- **同一 session 里重复输入相同文本，仍算新的一轮**，预算重新开账——
+  不能用"文本相同"判定为同一轮。
+- **未登记的模型不会被当成零成本**。若即将执行的 provider/model 在模型表里找不到估算，
+  预算守卫直接拒绝并记 `budget_estimate_unavailable`，而不是按 `estimated_next_max_cost = 0` 放行。
+
 决策日志新增字段：`budget_limit`、`budget_exposure_before`、`estimated_next_max_cost`、
 `budget_allowed`、`budget_error`、`cost_estimated`、`cost_estimation_source`。
 

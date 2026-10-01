@@ -200,7 +200,7 @@ JEV 这个"给任务定难度"的裁判，**判得其实很稳、也很准**—�
 | 证据路径 | `~/.dsh/jev-router/decisions.jsonl` |
 | 每次记录 | `classifier`（聚合值，口径不变）、`answer_confidences`（五项分解）、`metrics`（token/成本/延迟）、`reference_model` |
 | 最小样本 | 待总顾问确认（建议 ≥ 20 次真实任务判定） |
-| 成功判据 | 能明确回答：偏低是否由 `score` 项主导；`choice` 三项单独聚合后的分布如何 |
+| 成功判据 | 能明确回答：偏低是否由 `score` 项主导；`choice` **四项**（`task_type`、`difficulty_bucket`、`required_capability`、`risk_level`）单独聚合后的分布如何 |
 | 明确不做 | 不修改 `pilot_config.yaml` / `pilot_adjust_config.yaml`；不写任何 `benchmark/results/` 下的既有文件；不重跑官方 slot |
 
 **补充说明**：`/jev` 命令是**只读判断**，不接管、不改写任何模型请求，
