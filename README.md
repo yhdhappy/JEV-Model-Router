@@ -1,6 +1,6 @@
 # JEV Model Router
 
-**当前状态：原始 10-slot Pilot 已完成，正式结论为 `Adjust` / `mixed`。`PILOT_ADJUST_EXECUTION_GATE` 已通过，Router-only Adjust 重跑已经启动；`task_003` 已完成，下一项为 `task_004`。**
+**当前状态：原始 10-slot Pilot 已完成，正式结论为 `Adjust` / `mixed`。`PILOT_ADJUST_EXECUTION_GATE` 的 Router-only Adjust 代码修复已完成：`task_003`～`task_008`（含 `task_003`）五项受影响任务均已落地并通过回归测试；正式 Adjust 运行记录仍保存在本机 `benchmark/results/adjust_runs.jsonl`。**
 
 阶段 1 的 Router Core + CLI / Benchmark Harness 已通过 T-15 总验收。后续真实 Provider Gate、官方 Pilot、Pilot Summary 与 Adjust Gate 也已完成相应阶段验证。项目仍处于验证和调整期，不代表产品已经成熟或生产能力已经完成验证。
 
@@ -83,7 +83,7 @@ T-15 相关回归：
 .venv/bin/python -m pytest -q
 ```
 
-重要：请使用 `.venv/bin/python -m pytest -q`，不要直接运行 `.venv/bin/pytest`。项目顶层 benchmark 的导入在 console-script 路径下有已知 caveat，使用 Python module 入口才能保持仓库根目录下的规范导入路径。
+规范入口为 `.venv/bin/python -m pytest -q`；在 editable install 后，直接运行 `.venv/bin/pytest -q` 也可从仓库根目录导入 `benchmark` 与 `jev_router`。
 
 其他本地完整性检查：
 
@@ -102,7 +102,7 @@ git diff --check
 - 真实 Provider Gate 已通过：JEV System One 与本机 OpenCode Go 已完成真实端到端验证，Router 能取得 JEV 分类、真实模型执行结果、usage 和 provider-reported cost。
 - 10 个官方 Pilot slot 已全部完成；正式结论为 **Adjust**，决策有效性为 **mixed**。详细数据见 `benchmark/results/pilot_summary.md`。
 - `PILOT_ADJUST_GATE` 与 `PILOT_ADJUST_EXECUTION_GATE` 均已通过总顾问与独立审核；Adjust 采用 Router-only 方法，只重跑受影响任务，不改写原始 Pilot 历史证据。
-- Adjust 真实执行已经开始：`task_003` 已完成 1 次 Adjust 运行，route 成功但 acceptance 仍为 failed；下一项为 `task_004`。
+- Adjust 代码修复已完成：`task_004`（fallback 不可用候选不计费）、`task_005`（JSONL 脱敏矩阵回归）、`task_006`（editable install + pytest 双入口）、`task_008`（safe-default `fallback_used` 语义）均已落地；`task_003` 的正式 Adjust 运行记录为 route 成功、acceptance failed。
 - fixture 中保留的 `FILL_BEFORE_REAL_PILOT` 等字段属于冻结历史快照，不代表当前 Provider 或 Pilot 尚未接通。
 
 ### PILOT_CONFIG_FREEZE（已通过）
@@ -252,4 +252,4 @@ task_009 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Route
 
 该 Gate 已经总顾问与独立审核通过。Adjust 方法固定为 Router-only，不重跑 Baseline；严格顺序为 task_003 → task_004 → task_005 → task_006 → task_008，每个任务只允许 1 次 Adjust 运行。原始 Pilot 结果继续作为不可修改历史对照。
 
-当前执行进度：`task_003` 的 Adjust 运行已完成，Router route_status=success，选中 `medium_model`，但 acceptance 仍为 failed；JEV audit 为 reasonable。下一项为 `task_004`。详细记录见 `benchmark/results/adjust_runs.jsonl`。
+当前执行进度：`task_003`～`task_008` 五项受影响任务的代码修复与回归测试均已完成。`task_003` 的正式 Adjust 记录为 route_status=success、acceptance_status=failed、JEV audit=reasonable；`task_004`～`task_008` 的代码变更已 commit 到 GitHub，正式 Adjust 运行记录写入本机 `benchmark/results/adjust_runs.jsonl`（不进入版本库）。

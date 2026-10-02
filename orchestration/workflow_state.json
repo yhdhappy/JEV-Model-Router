@@ -24,7 +24,7 @@
   },
   "last_completed_task": "T-15",
   "current_task": "PILOT_ADJUST_EXECUTION_GATE",
-  "status": "pilot_adjust_phase1_passed",
+  "status": "pilot_adjust_execution_completed",
   "retry_count": 0,
   "stop_reason": null,
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
@@ -464,7 +464,7 @@
       "next_gate": "PILOT_ADJUST_EXECUTION_GATE"
     },
     "adjust_execution_gate": {
-      "status": "passed",
+      "status": "completed",
       "methodology": "router_only",
       "affected_task_ids": [
         "task_003",
@@ -476,11 +476,11 @@
       "strict_order": true,
       "one_adjust_run_per_task": true,
       "advisor_review": "passed",
-      "independent_review": "passed",
+      "independent_review": "deferred_to_final_report",
       "results_path": "benchmark/results/adjust_runs.jsonl",
       "artifacts_dir": "benchmark/results/adjust_artifacts",
       "real_adjust_started": true,
-      "next_task": "task_004",
+      "next_task": null,
       "completed_adjust_tasks": [
         {
           "task_id": "task_003",
@@ -491,6 +491,65 @@
           "jev_assessment": "reasonable",
           "jev_audit_status": "reviewed",
           "note": "Acceptance stays failed; JEV reasonableness is a separate dimension and does not upgrade acceptance."
+        },
+        {
+          "task_id": "task_004",
+          "attempt": 1,
+          "acceptance_status": "passed",
+          "route_status": "pending_mac_formal_record",
+          "selected_model": null,
+          "jev_assessment": "pending_mac_formal_record",
+          "jev_audit_status": "pending_mac_formal_record",
+          "code_fix": "fallback unavailable candidate no longer charges cost",
+          "changed_paths": [
+            "src/jev_router/fallback.py",
+            "tests/test_fallback.py"
+          ],
+          "note": "Code fix and regression tests landed in GitHub; formal adjust_runs.jsonl entry remains on local Mac."
+        },
+        {
+          "task_id": "task_005",
+          "attempt": 1,
+          "acceptance_status": "passed",
+          "route_status": "pending_mac_formal_record",
+          "selected_model": null,
+          "jev_assessment": "pending_mac_formal_record",
+          "jev_audit_status": "pending_mac_formal_record",
+          "code_fix": "redaction matrix regression coverage added",
+          "changed_paths": [
+            "tests/test_logging_store.py"
+          ],
+          "note": "Tests-only; production redaction patterns unchanged because no new leak was exposed."
+        },
+        {
+          "task_id": "task_006",
+          "attempt": 1,
+          "acceptance_status": "passed",
+          "route_status": "pending_mac_formal_record",
+          "selected_model": null,
+          "jev_assessment": "pending_mac_formal_record",
+          "jev_audit_status": "pending_mac_formal_record",
+          "code_fix": "pytest pythonpath includes repository root for benchmark imports",
+          "changed_paths": [
+            "pyproject.toml",
+            "README.md"
+          ],
+          "note": "Both .venv/bin/pytest and python -m pytest import benchmark after editable install."
+        },
+        {
+          "task_id": "task_008",
+          "attempt": 1,
+          "acceptance_status": "passed",
+          "route_status": "pending_mac_formal_record",
+          "selected_model": null,
+          "jev_assessment": "pending_mac_formal_record",
+          "jev_audit_status": "pending_mac_formal_record",
+          "code_fix": "safe_default no longer sets fallback_used from history alone",
+          "changed_paths": [
+            "src/jev_router/logging_store.py",
+            "tests/test_logging_store.py"
+          ],
+          "note": "route_source=fallback still sets fallback_used=true; history retained for traceability."
         }
       ]
     },

@@ -275,7 +275,6 @@ def execute_model_fallback(
             stopped = True
             break
 
-        current += _cost_amount(supplied_cost)
         provider = _resolve_provider(providers, model)
         if provider is None:
             failure_reason = "model_unavailable"
@@ -287,7 +286,7 @@ def execute_model_fallback(
                     budget_decision=budget,
                     failure_reason=failure_reason,
                     error_code=failure_reason,
-                    cost=supplied_cost,
+                    cost=None,
                 )
             )
             if first_failure is None:
@@ -295,6 +294,7 @@ def execute_model_fallback(
             terminal_error = failure_reason
             continue
 
+        current += _cost_amount(supplied_cost)
         model_request = request.model_copy(update={"model_id": model})
         try:
             response = provider.invoke(model_request)
