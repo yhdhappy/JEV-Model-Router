@@ -1,6 +1,6 @@
 # JEV Model Router
 
-**当前状态：原始 10-slot Pilot 已完成，正式结论为 `Adjust` / `mixed`。`PILOT_ADJUST_EXECUTION_GATE` 进行中：`task_003` 与 `task_004` 已正式完成 Mac Router-only Adjust；`task_004` 历史 `acceptance_status=failed` 已确认为 Harness false negative（`762b226` 已合入 `main`），未重跑、未改写历史 evidence；下一项为 `task_005`。**
+**当前状态：原始 10-slot Pilot 已完成，正式结论为 `Adjust` / `mixed`。`PILOT_ADJUST_EXECUTION_GATE` 进行中：`task_003`、`task_004`、`task_005`、`task_006` 已完成正式 Mac Router-only Adjust；`task_004` 的 Harness false negative 与 `task_005` 的 artifact evidence integrity 问题均已修复且历史未改写。`task_006` 正式 evidence 为 route success、manual acceptance passed、JEV reasonable/reviewed；下一项为 `task_008`。**
 
 阶段 1 的 Router Core + CLI / Benchmark Harness 已通过 T-15 总验收。后续真实 Provider Gate、官方 Pilot、Pilot Summary 与 Adjust Gate 也已完成相应阶段验证。项目仍处于验证和调整期，不代表产品已经成熟或生产能力已经完成验证。
 
@@ -252,4 +252,4 @@ task_009 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Route
 
 该 Gate 已经总顾问与独立审核通过。Adjust 方法固定为 Router-only，不重跑 Baseline；严格顺序为 task_003 → task_004 → task_005 → task_006 → task_008，每个任务只允许 1 次 Adjust 运行。原始 Pilot 结果继续作为不可修改历史对照。
 
-当前执行进度：`task_003` 与 `task_004` 正式 Mac Adjust 已完成。`task_004`：route_status=success、selected_model=medium_model、JEV audit=reasonable/reviewed、acceptance_status=failed（`confirmed_harness_false_negative`；Harness 修复 commit `762b226` 已合入 `main`，历史 `adjust_runs.jsonl` 未改写）。下一项为 `task_005`。详细记录见本机 `benchmark/results/adjust_runs.jsonl`。
+当前执行进度：`task_003`～`task_006` 已完成正式 Mac Adjust。`task_004` 历史 acceptance 仍为 failed，但已确认是 Harness runtime-noise false negative；`task_005` 历史 acceptance 仍为 failed，并记录 artifact evidence integrity issue；`task_006` route_status=success、selected_model=medium_model、acceptance_status=manual_passed、JEV audit=reasonable/reviewed。task_006 首次 execute launch 曾被 WebCodex 120 秒 orchestration timeout 中断且未写入 JSONL/artifact，项目负责人选择 recovery A 后完成唯一正式 evidence attempt。下一项为 `task_008`。详细记录见本机 `benchmark/results/adjust_runs.jsonl`。
