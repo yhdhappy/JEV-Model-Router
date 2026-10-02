@@ -480,7 +480,7 @@
       "results_path": "benchmark/results/adjust_runs.jsonl",
       "artifacts_dir": "benchmark/results/adjust_artifacts",
       "real_adjust_started": true,
-      "next_task": "task_005",
+      "next_task": "task_006",
       "completed_adjust_tasks": [
         {
           "task_id": "task_003",
@@ -505,6 +505,23 @@
           "fallback": "none",
           "budget_guard_blocked": false,
           "note": "Formal Mac Adjust executed once. Business fix and pytest passed; acceptance failed only because harness counted pytest runtime cache as disallowed paths. Historical adjust_runs.jsonl and artifact remain unchanged."
+        },
+        {
+          "task_id": "task_005",
+          "attempt": 1,
+          "acceptance_status": "failed",
+          "acceptance_interpretation": "formal_failed_with_artifact_evidence_integrity_issue",
+          "route_status": "success",
+          "route_source": "fallback",
+          "selected_model": "high_model",
+          "fallback": "medium_model:provider_timeout -> high_model:success",
+          "jev_assessment": "reasonable",
+          "jev_audit_status": "reviewed",
+          "evidence_integrity_issue": "artifact_source_sanitization_corruption",
+          "historical_record_modified": false,
+          "historical_artifact_recoverable": false,
+          "task_rerun": false,
+          "note": "Formal Mac Adjust executed once. Route succeeded via fallback; acceptance failed. Artifact source files were corrupted by destructive _sanitize() on allowed-path sources; fix merged in 2a76638 for future runs only. Historical task_005 artifact and adjust_runs.jsonl remain unchanged."
         }
       ],
       "infrastructure_issues": [
@@ -515,6 +532,16 @@
           "resolution_commit": "762b226",
           "historical_record_modified": false,
           "task_rerun": false
+        },
+        {
+          "issue": "artifact_source_sanitization_corruption",
+          "affected_task": "task_005",
+          "status": "resolved",
+          "resolution_commit": "2a76638",
+          "historical_record_modified": false,
+          "historical_artifact_recoverable": false,
+          "task_rerun": false,
+          "description": "Adjust artifact writer applied destructive _sanitize() to allowed-path source files, breaking Python syntax in task_005 redaction tests. Fixed by storing sources byte-faithfully (_artifact_source_bytes) and sanitizing only response.txt."
         }
       ]
     },
