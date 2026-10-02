@@ -1,6 +1,6 @@
 # JEV Model Router
 
-**当前状态：原始 10-slot Pilot 已完成，正式结论为 `Adjust` / `mixed`。`PILOT_ADJUST_EXECUTION_GATE` 已通过，Router-only Adjust 重跑已经启动；`task_003` 已完成，下一项为 `task_004`。**
+**当前状态：原始 10-slot Pilot 已完成，正式结论为 `Adjust` / `mixed`。`PILOT_ADJUST_EXECUTION_GATE` 进行中：`task_003` 与 `task_004` 已正式完成 Mac Router-only Adjust；`task_004` 历史 `acceptance_status=failed` 已确认为 Harness false negative（`762b226` 已合入 `main`），未重跑、未改写历史 evidence；下一项为 `task_005`。**
 
 阶段 1 的 Router Core + CLI / Benchmark Harness 已通过 T-15 总验收。后续真实 Provider Gate、官方 Pilot、Pilot Summary 与 Adjust Gate 也已完成相应阶段验证。项目仍处于验证和调整期，不代表产品已经成熟或生产能力已经完成验证。
 
@@ -102,7 +102,7 @@ git diff --check
 - 真实 Provider Gate 已通过：JEV System One 与本机 OpenCode Go 已完成真实端到端验证，Router 能取得 JEV 分类、真实模型执行结果、usage 和 provider-reported cost。
 - 10 个官方 Pilot slot 已全部完成；正式结论为 **Adjust**，决策有效性为 **mixed**。详细数据见 `benchmark/results/pilot_summary.md`。
 - `PILOT_ADJUST_GATE` 与 `PILOT_ADJUST_EXECUTION_GATE` 均已通过总顾问与独立审核；Adjust 采用 Router-only 方法，只重跑受影响任务，不改写原始 Pilot 历史证据。
-- Adjust 真实执行已经开始：`task_003` 已完成 1 次 Adjust 运行，route 成功但 acceptance 仍为 failed；下一项为 `task_004`。
+- Adjust 正式执行：`task_003` 与 `task_004` 各已完成 1 次 Mac Adjust。`task_004` route 成功、JEV reasonable，但历史 acceptance 仍为 failed（Harness false negative，基础设施修复已进 `main`）；下一项为 `task_005`。候选业务修复仍在 Draft PR #1，未合入 `main`。
 - fixture 中保留的 `FILL_BEFORE_REAL_PILOT` 等字段属于冻结历史快照，不代表当前 Provider 或 Pilot 尚未接通。
 
 ### PILOT_CONFIG_FREEZE（已通过）
@@ -252,4 +252,4 @@ task_009 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Route
 
 该 Gate 已经总顾问与独立审核通过。Adjust 方法固定为 Router-only，不重跑 Baseline；严格顺序为 task_003 → task_004 → task_005 → task_006 → task_008，每个任务只允许 1 次 Adjust 运行。原始 Pilot 结果继续作为不可修改历史对照。
 
-当前执行进度：`task_003` 的 Adjust 运行已完成，Router route_status=success，选中 `medium_model`，但 acceptance 仍为 failed；JEV audit 为 reasonable。下一项为 `task_004`。详细记录见 `benchmark/results/adjust_runs.jsonl`。
+当前执行进度：`task_003` 与 `task_004` 正式 Mac Adjust 已完成。`task_004`：route_status=success、selected_model=medium_model、JEV audit=reasonable/reviewed、acceptance_status=failed（`confirmed_harness_false_negative`；Harness 修复 commit `762b226` 已合入 `main`，历史 `adjust_runs.jsonl` 未改写）。下一项为 `task_005`。详细记录见本机 `benchmark/results/adjust_runs.jsonl`。
