@@ -221,7 +221,7 @@ JEV 这个"给任务定难度"的裁判，**判得其实很稳、也很准**—�
 ## 8. 复现步骤
 
 ```bash
-cd /Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router
+cd /path/to/JEV-Model-Router
 
 # 2.1 / 2.2 节的统计
 .venv/bin/python - <<'PY'
