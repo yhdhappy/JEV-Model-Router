@@ -24,7 +24,7 @@
   },
   "last_completed_task": "T-15",
   "current_task": "PILOT_ADJUST_EXECUTION_GATE",
-  "status": "pilot_adjust_phase1_passed",
+  "status": "pilot_adjust_execution_completed",
   "retry_count": 0,
   "stop_reason": null,
   "project_root": "/Users/yhd/Documents/AI_Workspace/project_0010_JEV_Model_Router",
@@ -464,7 +464,7 @@
       "next_gate": "PILOT_ADJUST_EXECUTION_GATE"
     },
     "adjust_execution_gate": {
-      "status": "passed",
+      "status": "completed",
       "methodology": "router_only",
       "affected_task_ids": [
         "task_003",
@@ -480,7 +480,7 @@
       "results_path": "benchmark/results/adjust_runs.jsonl",
       "artifacts_dir": "benchmark/results/adjust_artifacts",
       "real_adjust_started": true,
-      "next_task": "task_008",
+      "next_task": null,
       "completed_adjust_tasks": [
         {
           "task_id": "task_003",
@@ -537,6 +537,27 @@
           "jev_audit_status": "reviewed",
           "orchestration_recovery": true,
           "note": "Formal evidence attempt passed manual acceptance. A prior WebCodex shell launch was terminated by a 120s orchestration timeout before any adjust_runs.jsonl record or artifact was written; owner authorized recovery option A. Recovery execute produced the sole formal task_006 evidence."
+        },
+        {
+          "task_id": "task_008",
+          "attempt": 1,
+          "acceptance_status": "failed",
+          "acceptance_interpretation": "formal_failed_filesystem_constraint_business_fix_verified_by_replay",
+          "route_status": "success",
+          "route_source": "jev",
+          "selected_model": "medium_model",
+          "fallback": "none",
+          "budget_guard_blocked": false,
+          "total_production_cost": 0.013976673999999998,
+          "jev_assessment": "reasonable",
+          "jev_audit_status": "reviewed",
+          "focused_replay_tests": "44_passed",
+          "business_fix_verified_by_replay": true,
+          "formal_acceptance_failure_reason": "manual filesystem constraint failed; exact disallowed path was not retained in the safe formal record",
+          "suspected_execution_side_effect": "Router response reports uv run --extra dev pytest, which may have created workspace files outside allowed_paths; exact path is not proven",
+          "historical_record_modified": false,
+          "task_rerun": false,
+          "note": "Formal task_008 route succeeded with medium_model but acceptance remained failed. Saved artifact semantics were independently replayed with project venv: logging + router tests passed 44/44 and only the two allowed business files were material changes. Historical acceptance remains failed because the original filesystem failure cannot be reconstructed exactly from the safe record."
         }
       ],
       "infrastructure_issues": [
@@ -573,7 +594,9 @@
           "recovery_completed": true,
           "description": "The first task_006 execute launch was killed by the orchestration transport before any official Adjust record or artifact existed. The owner explicitly authorized one recovery execute using a long-running async Job; that recovery produced the sole formal task_006 evidence."
         }
-      ]
+      ],
+      "formal_execution_complete": true,
+      "execution_evidence_final_review": "pending"
     },
     "jev_confidence_semantics_gate": {
       "status": "phase1_approved_evidence_collection_only",

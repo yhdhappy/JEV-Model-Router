@@ -1,6 +1,6 @@
 # JEV Model Router
 
-**当前状态：原始 10-slot Pilot 已完成，正式结论为 `Adjust` / `mixed`。`PILOT_ADJUST_EXECUTION_GATE` 进行中：`task_003`、`task_004`、`task_005`、`task_006` 已完成正式 Mac Router-only Adjust；`task_004` 的 Harness false negative 与 `task_005` 的 artifact evidence integrity 问题均已修复且历史未改写。`task_006` 正式 evidence 为 route success、manual acceptance passed、JEV reasonable/reviewed；下一项为 `task_008`。**
+**当前状态：原始 10-slot Pilot 已完成，正式结论为 `Adjust` / `mixed`。全部 5 个受影响任务（task_003、task_004、task_005、task_006、task_008）的正式 Mac Router-only Adjust 已执行完毕；Adjust execution 已完成，但最终 Codex/PI 独立审计与 PR #1 候选代码处理仍待统一收尾。历史 acceptance 不改写：task_004 为 confirmed Harness false negative，task_005 有 artifact evidence integrity issue，task_006 manual_passed，task_008 正式 acceptance=failed 但保存 artifact 的业务修复已独立 replay 验证 44/44 通过。**
 
 阶段 1 的 Router Core + CLI / Benchmark Harness 已通过 T-15 总验收。后续真实 Provider Gate、官方 Pilot、Pilot Summary 与 Adjust Gate 也已完成相应阶段验证。项目仍处于验证和调整期，不代表产品已经成熟或生产能力已经完成验证。
 
@@ -252,4 +252,4 @@ task_009 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Route
 
 该 Gate 已经总顾问与独立审核通过。Adjust 方法固定为 Router-only，不重跑 Baseline；严格顺序为 task_003 → task_004 → task_005 → task_006 → task_008，每个任务只允许 1 次 Adjust 运行。原始 Pilot 结果继续作为不可修改历史对照。
 
-当前执行进度：`task_003`～`task_006` 已完成正式 Mac Adjust。`task_004` 历史 acceptance 仍为 failed，但已确认是 Harness runtime-noise false negative；`task_005` 历史 acceptance 仍为 failed，并记录 artifact evidence integrity issue；`task_006` route_status=success、selected_model=medium_model、acceptance_status=manual_passed、JEV audit=reasonable/reviewed。task_006 首次 execute launch 曾被 WebCodex 120 秒 orchestration timeout 中断且未写入 JSONL/artifact，项目负责人选择 recovery A 后完成唯一正式 evidence attempt。下一项为 `task_008`。详细记录见本机 `benchmark/results/adjust_runs.jsonl`。
+当前执行进度：`task_003`、`task_004`、`task_005`、`task_006`、`task_008` 均已完成正式 Mac Adjust。task_006 route_status=success、selected_model=medium_model、acceptance_status=manual_passed、JEV audit=reasonable/reviewed；其首次 execute launch 曾被 WebCodex 120 秒 orchestration timeout 中断且未写入 JSONL/artifact，项目负责人选择 recovery A 后产生唯一正式 evidence attempt。task_008 route_status=success、selected_model=medium_model、acceptance_status=failed、JEV audit=reasonable/reviewed；artifact 用项目 venv 独立 replay 后 logging + router 测试 44/44 通过且只有允许的两个业务文件发生 material change，但原始 filesystem failure 的确切 disallowed path 未保存在 safe record 中，因此历史 failed 保持不变。下一步是统一 Codex/PI 最终审计与 PR #1 处理，不开始 T-16。
