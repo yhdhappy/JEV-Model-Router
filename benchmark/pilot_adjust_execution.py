@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple, Unio
 
 from benchmark.pilot_adjust import _validate_completed_source, build_adjust_runtime_config
 from benchmark.pilot_adjust_config import DEFAULT_CONFIG_PATH, load_pilot_adjust_config
+from benchmark.official_pilot import _sanitize_artifact_text
 from benchmark.real_pilot import (
     DEFAULT_REGISTRY_PATH,
     MAX_EVIDENCE_FILE_BYTES,
@@ -445,7 +446,7 @@ def _write_artifact(preflight, capture, record):
     try:
         router_dir = stage
         evidence = _evidence_record(capture)
-        response = _sanitize(str(evidence.get("response_text") or ""))
+        response = _sanitize_shareable_response(str(evidence.get("response_text") or ""))
         _bounded(response.encode("utf-8"), MAX_EVIDENCE_RESPONSE_BYTES, "response")
         (router_dir / "response.txt").write_text(response, encoding="utf-8")
         files = [{"path": "response.txt", "sha256": _sha256((router_dir / "response.txt").read_bytes()), "size": len(response.encode("utf-8"))}]
@@ -456,8 +457,7 @@ def _write_artifact(preflight, capture, record):
         for relative, item in sorted(allowed.items()):
             if not isinstance(item, Mapping) or item.get("kind") != "file":
                 continue
-            text = _sanitize(str(item.get("text") or ""))
-            data = text.encode("utf-8")
+            data = _artifact_source_bytes(str(item.get("text") or ""))
             _bounded(data, MAX_EVIDENCE_FILE_BYTES, "evidence file")
             total += len(data)
             if total > MAX_EVIDENCE_TOTAL_BYTES:
@@ -609,11 +609,28 @@ def _safe_relative(value: str) -> str:
     return "/".join(part for part in value.split("/") if part not in {"", "."})
 
 
+def _artifact_source_bytes(text: str) -> bytes:
+    """Store allowed-path workspace sources byte-faithfully for reproducible review."""
+
+    value = text
+    key_path = os.environ.get("JEV_API_KEY_FILE")
+    if key_path:
+        for candidate in (key_path, str(Path(key_path).expanduser())):
+            if candidate:
+                value = value.replace(candidate, "[REDACTED_KEY_PATH]")
+    return value.encode("utf-8")
+
+
+def _sanitize_shareable_response(value: str) -> str:
+    """Redact provider/JEV response text before writing shareable response.txt."""
+
+    return _sanitize_artifact_text(value)
+
+
 def _sanitize(value: str) -> str:
-    value = re.sub(r"(?i)bearer\s+[^\s,;]+", "[REDACTED]", value)
-    value = re.sub(r"(?i)(api[_-]?key|authorization|password|secret|credential)[^=:\n]*[=:]\s*[^\s,;]+", r"\1=[REDACTED]", value)
-    value = re.sub(r"(?i)/(?:Users|home)/[^\s\n]+", "[REDACTED_PATH]", value)
-    return value
+    """Backward-compatible alias for tests and JSONL-safe strings."""
+
+    return _sanitize_shareable_response(value)
 
 
 def _bounded(data: bytes, limit: int, label: str) -> None:
