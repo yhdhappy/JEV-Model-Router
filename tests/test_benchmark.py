@@ -404,6 +404,149 @@ def test_run_pair_summary_is_deterministic_for_identical_executors(tmp_path):
     assert first["baseline"]["executor"]["status"] == "completed"
 
 
+def _allowed_paths_check(result):
+    return next(
+        check for check in result["acceptance"]["checks"] if check["name"] == "allowed_paths"
+    )
+
+
+def test_pytest_cache_does_not_fail_allowed_paths_check(tmp_path):
+    fixture = make_fixture(
+        tmp_path,
+        mode="manual",
+        allowed_paths=["allowed/"],
+    )
+
+    def executor(workspace, metadata, prompt):
+        target = workspace / "allowed" / "output.txt"
+        target.parent.mkdir(parents=True)
+        target.write_text("changed", encoding="utf-8")
+        cache = workspace / ".pytest_cache" / "v" / "cache"
+        cache.mkdir(parents=True)
+        (cache / "nodeids").write_text("[]", encoding="utf-8")
+        (workspace / ".pytest_cache" / "README.md").write_text("cache", encoding="utf-8")
+
+    result = run_fixture(fixture, "baseline", baseline_executor=executor)
+    check = _allowed_paths_check(result)
+
+    assert check["passed"] is True
+    assert check["disallowed_paths"] == []
+    assert "allowed/output.txt" in check["material_changed_paths"] or "allowed" in check["material_changed_paths"]
+    assert any(".pytest_cache" in path for path in check["ignored_runtime_paths"])
+
+
+def test_pycache_and_pyc_files_do_not_fail_allowed_paths_check(tmp_path):
+    fixture = make_fixture(
+        tmp_path,
+        mode="manual",
+        allowed_paths=["module.py"],
+    )
+
+    def executor(workspace, metadata, prompt):
+        (workspace / "module.py").write_text("print('ok')\n", encoding="utf-8")
+        cache = workspace / "__pycache__"
+        cache.mkdir()
+        (cache / "module.cpython-312.pyc").write_bytes(b"fake-pyc")
+
+    result = run_fixture(fixture, "baseline", baseline_executor=executor)
+    check = _allowed_paths_check(result)
+
+    assert check["passed"] is True
+    assert check["disallowed_paths"] == []
+    assert "module.py" in check["material_changed_paths"]
+    assert any("__pycache__" in path for path in check["ignored_runtime_paths"])
+
+
+def test_disallowed_paths_still_fail_when_outside_allowed_paths(tmp_path):
+    fixture = make_fixture(
+        tmp_path,
+        mode="manual",
+        allowed_paths=["src/jev_router/fallback.py"],
+    )
+
+    def unexpected_file(workspace, metadata, prompt):
+        (workspace / "src/jev_router/fallback.py").parent.mkdir(parents=True, exist_ok=True)
+        (workspace / "src/jev_router/fallback.py").write_text("fix", encoding="utf-8")
+        (workspace / "unexpected.txt").write_text("nope", encoding="utf-8")
+
+    result = run_fixture(fixture, "baseline", baseline_executor=unexpected_file)
+    check = _allowed_paths_check(result)
+    assert check["passed"] is False
+    assert "unexpected.txt" in check["disallowed_paths"]
+
+    def other_module(workspace, metadata, prompt):
+        (workspace / "src/jev_router/fallback.py").parent.mkdir(parents=True, exist_ok=True)
+        (workspace / "src/jev_router/fallback.py").write_text("fix", encoding="utf-8")
+        (workspace / "src/other_module.py").write_text("nope", encoding="utf-8")
+
+    result = run_fixture(fixture, "baseline", baseline_executor=other_module)
+    check = _allowed_paths_check(result)
+    assert check["passed"] is False
+    assert "src/other_module.py" in check["disallowed_paths"]
+
+
+def test_allowed_path_material_changes_remain_visible(tmp_path):
+    fixture = make_fixture(
+        tmp_path,
+        mode="manual",
+        allowed_paths=["src/jev_router/fallback.py", "tests/test_fallback.py"],
+    )
+
+    def executor(workspace, metadata, prompt):
+        for relative in ("src/jev_router/fallback.py", "tests/test_fallback.py"):
+            target = workspace / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("changed\n", encoding="utf-8")
+        cache = workspace / ".pytest_cache"
+        cache.mkdir()
+        (cache / "CACHEDIR.TAG").write_text("tag", encoding="utf-8")
+
+    result = run_fixture(fixture, "baseline", baseline_executor=executor)
+    check = _allowed_paths_check(result)
+
+    assert check["passed"] is True
+    assert "src/jev_router/fallback.py" in check["material_changed_paths"]
+    assert "tests/test_fallback.py" in check["material_changed_paths"]
+    assert check["disallowed_paths"] == []
+
+
+TASK_004_FIXTURE = Path(__file__).resolve().parents[1] / "benchmark" / "fixtures" / "task_004"
+
+
+def test_task_004_synthetic_replay_passes_allowed_paths_with_real_pytest_cache():
+    if not TASK_004_FIXTURE.is_dir():
+        pytest.skip("task_004 fixture not available")
+
+    def executor(workspace, metadata, prompt):
+        # Simulate a legal Router edit inside allowed_paths without depending on
+        # candidate business fixes that may still live only on a Draft PR branch.
+        for relative in ("src/jev_router/fallback.py", "tests/test_fallback.py"):
+            target = workspace / relative
+            target.write_text(
+                target.read_text(encoding="utf-8") + "\n# harness synthetic replay\n",
+                encoding="utf-8",
+            )
+        completed = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "tests/test_fallback.py"],
+            cwd=workspace,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if completed.returncode != 0:
+            raise RuntimeError(completed.stdout + completed.stderr)
+
+    result = run_fixture(TASK_004_FIXTURE, "router", router_executor=executor)
+    check = _allowed_paths_check(result)
+
+    assert result["status"] == "pending_manual"
+    assert check["passed"] is True
+    assert check["disallowed_paths"] == []
+    assert "src/jev_router/fallback.py" in check["material_changed_paths"]
+    assert "tests/test_fallback.py" in check["material_changed_paths"]
+    assert any(".pytest_cache" in path for path in check["ignored_runtime_paths"])
+
+
 def test_runner_has_no_network_provider_surface():
     project_root = Path(__file__).parents[1]
     source = (project_root / "benchmark" / "runner.py").read_text(encoding="utf-8")

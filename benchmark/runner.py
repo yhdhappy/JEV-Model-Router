@@ -367,14 +367,20 @@ def _filesystem_checks(spec: FixtureSpec, workspace: Path) -> List[Dict[str, Any
     before = _tree_snapshot(spec.initial_state)
     after = _tree_snapshot(workspace)
     changed = sorted(key for key in set(before) | set(after) if before.get(key) != after.get(key))
+    ignored_runtime_paths = sorted(path for path in changed if _is_acceptance_runtime_noise(path))
+    material_changed = [path for path in changed if path not in ignored_runtime_paths]
     checks: List[Dict[str, Any]] = []
     if spec.allowed_paths:
-        disallowed = [path for path in changed if not _under_allowed(path, spec.allowed_paths)]
+        disallowed = [
+            path for path in material_changed if not _under_allowed(path, spec.allowed_paths)
+        ]
         checks.append(
             {
                 "name": "allowed_paths",
                 "passed": not disallowed,
                 "changed_paths": changed,
+                "material_changed_paths": material_changed,
+                "ignored_runtime_paths": ignored_runtime_paths,
                 "disallowed_paths": disallowed,
             }
         )
@@ -473,7 +479,33 @@ def _exists(path: Path) -> bool:
 
 
 def _under_allowed(path: str, allowed_paths: Sequence[str]) -> bool:
-    return any(allowed == "." or path == allowed or path.startswith(allowed + "/") for allowed in allowed_paths)
+    for allowed in allowed_paths:
+        if allowed == ".":
+            return True
+        if path == allowed or path.startswith(allowed + "/"):
+            return True
+        # Parent directories that must exist to hold an allowed file or tree.
+        if allowed.startswith(path + "/"):
+            return True
+    return False
+
+
+def _is_acceptance_runtime_noise(path: str) -> bool:
+    """Return True for Python/pytest artifacts that acceptance commands may create.
+
+    These paths are excluded from allowed_paths enforcement only when the fixture
+    declares a non-empty allowed_paths list.  Empty allowed_paths (``[]``) keeps
+    the strict no-filesystem-change contract unchanged.
+    """
+
+    if not path:
+        return False
+    parts = PurePosixPath(path).parts
+    if ".pytest_cache" in parts:
+        return True
+    if "__pycache__" in parts:
+        return True
+    return path.endswith(".pyc") or path.endswith(".pyo")
 
 
 def _tree_hash(root: Path) -> str:
