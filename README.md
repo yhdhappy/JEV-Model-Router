@@ -1,6 +1,6 @@
 # JEV Model Router
 
-**当前状态：原始 10-slot Pilot 已完成，正式结论为 `Adjust` / `mixed`。全部 5 个受影响任务（task_003、task_004、task_005、task_006、task_008）的正式 Mac Router-only Adjust 已执行完毕；Adjust execution 已完成，但最终 Codex/PI 独立审计与 PR #1 候选代码处理仍待统一收尾。历史 acceptance 不改写：task_004 为 confirmed Harness false negative，task_005 有 artifact evidence integrity issue，task_006 manual_passed，task_008 正式 acceptance=failed 但保存 artifact 的业务修复已独立 replay 验证 44/44 通过。**
+**当前状态：Stage 1 + Pilot + Adjust 当前验证阶段已完成。原始 10-slot Pilot 正式结论为 `Adjust` / `mixed`；全部 5 个受影响任务（task_003、task_004、task_005、task_006、task_008）的正式 Mac Router-only Adjust 已执行完毕，Codex/PI 最终审计通过，经正式 evidence 支持的业务修复已合入 `main`。历史 acceptance 不改写：task_003/004/005/008 正式 acceptance=failed，task_006 manual_passed；engineering interpretation 见 `orchestration/workflow_state.json`。**
 
 阶段 1 的 Router Core + CLI / Benchmark Harness 已通过 T-15 总验收。后续真实 Provider Gate、官方 Pilot、Pilot Summary 与 Adjust Gate 也已完成相应阶段验证。项目仍处于验证和调整期，不代表产品已经成熟或生产能力已经完成验证。
 
@@ -83,7 +83,7 @@ T-15 相关回归：
 .venv/bin/python -m pytest -q
 ```
 
-重要：请使用 `.venv/bin/python -m pytest -q`，不要直接运行 `.venv/bin/pytest`。项目顶层 benchmark 的导入在 console-script 路径下有已知 caveat，使用 Python module 入口才能保持仓库根目录下的规范导入路径。
+规范入口为 `.venv/bin/python -m pytest -q`；在 editable install 后，直接运行 `.venv/bin/pytest -q` 也可从仓库根目录导入 `benchmark` 与 `jev_router`（task_006 正式 artifact 已验证两种入口）。
 
 其他本地完整性检查：
 
@@ -102,7 +102,7 @@ git diff --check
 - 真实 Provider Gate 已通过：JEV System One 与本机 OpenCode Go 已完成真实端到端验证，Router 能取得 JEV 分类、真实模型执行结果、usage 和 provider-reported cost。
 - 10 个官方 Pilot slot 已全部完成；正式结论为 **Adjust**，决策有效性为 **mixed**。详细数据见 `benchmark/results/pilot_summary.md`。
 - `PILOT_ADJUST_GATE` 与 `PILOT_ADJUST_EXECUTION_GATE` 均已通过总顾问与独立审核；Adjust 采用 Router-only 方法，只重跑受影响任务，不改写原始 Pilot 历史证据。
-- Adjust 正式执行：`task_003` 与 `task_004` 各已完成 1 次 Mac Adjust。`task_004` route 成功、JEV reasonable，但历史 acceptance 仍为 failed（Harness false negative，基础设施修复已进 `main`）；下一项为 `task_005`。候选业务修复仍在 Draft PR #1，未合入 `main`。
+- Adjust 正式执行：task_003～task_008（5 个受影响 slot）各已完成 1 次 Mac Router-only Adjust；正式 evidence 见本机 `benchmark/results/adjust_runs.jsonl`。经审计支持的业务修复（task_004 fallback cost、task_005 redaction tests、task_006 pythonpath、task_008 fallback_used）已合入 `main`。
 - fixture 中保留的 `FILL_BEFORE_REAL_PILOT` 等字段属于冻结历史快照，不代表当前 Provider 或 Pilot 尚未接通。
 
 ### PILOT_CONFIG_FREEZE（已通过）
@@ -252,4 +252,4 @@ task_009 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Route
 
 该 Gate 已经总顾问与独立审核通过。Adjust 方法固定为 Router-only，不重跑 Baseline；严格顺序为 task_003 → task_004 → task_005 → task_006 → task_008，每个任务只允许 1 次 Adjust 运行。原始 Pilot 结果继续作为不可修改历史对照。
 
-当前执行进度：`task_003`、`task_004`、`task_005`、`task_006`、`task_008` 均已完成正式 Mac Adjust。task_006 route_status=success、selected_model=medium_model、acceptance_status=manual_passed、JEV audit=reasonable/reviewed；其首次 execute launch 曾被 WebCodex 120 秒 orchestration timeout 中断且未写入 JSONL/artifact，项目负责人选择 recovery A 后产生唯一正式 evidence attempt。task_008 route_status=success、selected_model=medium_model、acceptance_status=failed、JEV audit=reasonable/reviewed；artifact 用项目 venv 独立 replay 后 logging + router 测试 44/44 通过且只有允许的两个业务文件发生 material change，但原始 filesystem failure 的确切 disallowed path 未保存在 safe record 中，因此历史 failed 保持不变。下一步是统一 Codex/PI 最终审计与 PR #1 处理，不开始 T-16。
+当前执行进度：五个受影响任务均已完成正式 Mac Adjust；`execution_evidence_final_review=passed`，经审计支持的业务修复已合入 `main`。task_006 首次 execute launch 曾被 WebCodex 120 秒 orchestration timeout 中断（未写入 JSONL/artifact），recovery A 后产生唯一正式 evidence。task_008 正式 acceptance=failed，但 artifact 业务语义已独立 replay 验证。T-16 仍为 registered_not_started，不自动启动。

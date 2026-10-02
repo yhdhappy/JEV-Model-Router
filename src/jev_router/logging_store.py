@@ -90,8 +90,7 @@ def _project(result: RouteResult) -> Dict[str, Any]:
         "selected_model": result.selected_model,
         "jev_called": classifier is not None
         or result.route_source in {"jev", "safe_default"},
-        "fallback_used": result.route_source == "fallback"
-        or bool(result.fallback_history),
+        "fallback_used": result.route_source == "fallback",
         "fallback_history": list(result.fallback_history),
         "classifier_cost": cost.classifier_cost,
         "execution_cost": cost.execution_cost,
