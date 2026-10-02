@@ -1,8 +1,8 @@
 # JEV Model Router
 
-**阶段 1：Router Core + CLI / Benchmark Harness 技术验证已通过 T-15 总验收。**
+**当前状态：原始 10-slot Pilot 已完成，正式结论为 `Adjust` / `mixed`。`PILOT_ADJUST_EXECUTION_GATE` 已通过，Router-only Adjust 重跑已经启动；`task_003` 已完成，下一项为 `task_004`。**
 
-这表示 Router Core 的技术链路已经满足进入 10 个真实任务 Pilot 的前置条件；不代表产品已经成功，也不代表真实 Agent 集成或生产能力已经验证完成。
+阶段 1 的 Router Core + CLI / Benchmark Harness 已通过 T-15 总验收。后续真实 Provider Gate、官方 Pilot、Pilot Summary 与 Adjust Gate 也已完成相应阶段验证。项目仍处于验证和调整期，不代表产品已经成熟或生产能力已经完成验证。
 
 ## 阶段 1 是什么，不是什么
 
@@ -93,18 +93,17 @@ PYTHONPYCACHEPREFIX=/private/tmp/jev-router-pycache \
 git diff --check
 ```
 
-## Pilot 任务准备状态
+## Pilot 与 Adjust 当前状态
 
-`benchmark/fixtures/task_001` 到 `task_009` 以及 `benchmark/fixtures/task_010_fallback` 已经全部从空模板升级为可审查的 Pilot 任务定义。`task_001`～`task_009` 都来自当前仓库中的真实问题或真实下一步工作；`task_010_fallback` 是受控 Mock 故障注入任务。
+`benchmark/fixtures/task_001` 到 `task_009` 以及 `benchmark/fixtures/task_010_fallback` 均已完成 Pilot 定义与执行：`task_001`～`task_009` 为真实 Baseline vs Router 对比，`task_010_fallback` 为受控 Mock fallback / budget 验证。
 
-这不表示真实 10-task Pilot 已经运行。当前状态仍是 `real_pilot_started=false`：
+当前可确认的状态：
 
-- 真实 Provider Gate 已通过：JEV System One 与本机 OpenCode Go 已完成真实端到端单请求验证，Router 能取得 JEV 分类、真实模型执行结果、usage 和 provider-reported cost。
-- `task_003`～`task_009` fixture 内的 `FILL_BEFORE_REAL_PILOT` 仍保留为冻结快照中的执行前占位，不代表真实 Provider 未接通；正式 Pilot runner 会在运行时注入真实模型层级和预算。
-- `task_010_fallback` 继续使用 T-13 受控 Mock 故障入口，用来验证 fallback / Budget Guard，不冒充真实 Provider 成功。
-- 在获得真实 Pilot 数据前，不预填结果、分数或 Go / Adjust / Stop 判断。
-
-PILOT_RUNNER_WIRING 已通过：离线接线、两轮真实 task_002 gate smoke、总顾问验收和独立 review 均通过。Baseline / Router 使用独立 workspace 与独立 provider 状态；真实 Router 路径已实际调用 JEV，验收通过，且 gate 结果只写 `pilot_runner_gate_smoke.jsonl`。当前仍保持 `real_pilot_started=false`；下一步是 `PILOT_CONFIG_FREEZE`，冻结正式 Pilot 的 Baseline、预算、重复运行阈值和官方结果写入规则。
+- 真实 Provider Gate 已通过：JEV System One 与本机 OpenCode Go 已完成真实端到端验证，Router 能取得 JEV 分类、真实模型执行结果、usage 和 provider-reported cost。
+- 10 个官方 Pilot slot 已全部完成；正式结论为 **Adjust**，决策有效性为 **mixed**。详细数据见 `benchmark/results/pilot_summary.md`。
+- `PILOT_ADJUST_GATE` 与 `PILOT_ADJUST_EXECUTION_GATE` 均已通过总顾问与独立审核；Adjust 采用 Router-only 方法，只重跑受影响任务，不改写原始 Pilot 历史证据。
+- Adjust 真实执行已经开始：`task_003` 已完成 1 次 Adjust 运行，route 成功但 acceptance 仍为 failed；下一项为 `task_004`。
+- fixture 中保留的 `FILL_BEFORE_REAL_PILOT` 等字段属于冻结历史快照，不代表当前 Provider 或 Pilot 尚未接通。
 
 ### PILOT_CONFIG_FREEZE（已通过）
 
@@ -114,7 +113,7 @@ PILOT_RUNNER_WIRING 已通过：离线接线、两轮真实 task_002 gate smoke�
 
 官方 Pilot 的任务推进同时要求前一任务完成 acceptance resolution 和 router JEV audit human review；任一项仍待处理，下一任务都会被阻塞。
 
-Go / Adjust / Stop 只作为冻结 criteria 保存，当前 `outcome=null`，没有预填结论。fixture 中的 `FILL_BEFORE_REAL_PILOT` 占位符保持不变，由 runtime config 覆盖。PILOT_CONFIG_FREEZE 已经总顾问与独立审核通过；当前状态仍是 `real_pilot_started=false`。`PILOT_OFFICIAL_EXECUTION_GATE` 及 evidence/manual-review subgate 已经总顾问与独立审核通过；真实 Pilot 仍未开始。下一步是对 `task_001` 进行单任务显式授权后执行，执行前继续保持 `real_pilot_started=false`。
+Pilot 开始前，Go / Adjust / Stop 只作为冻结 criteria 保存，`outcome=null`，不允许预填结论；fixture 中的 `FILL_BEFORE_REAL_PILOT` 占位符也保持为冻结历史快照，由 runtime config 覆盖。随后 `PILOT_OFFICIAL_EXECUTION_GATE` 及 evidence/manual-review subgate 均通过，官方 Pilot 已按冻结规则完成；最终正式结论为 **Adjust**。
 
 阶段一 Policy 中，required_capability 表示可接受模型能力的下限；在满足 task type、enabled 和能力下限的 eligible 模型中，系统仍按当前静态 price proxy 排序。因此，更高能力 tier 如果 proxy 更低，也可能被选中。gate smoke 曾观察到 low file_operation 选择 medium_model；这只是当前路由规则行为，不是官方 Pilot 的成本结论。
 
@@ -139,16 +138,16 @@ rg -n 'FILL_BEFORE_REAL_PILOT|controlled_mock_only_not_real_provider' benchmark/
 .venv/bin/python -m pytest -q tests/test_pilot_templates.py
 ```
 
-不要把 `pilot` CLI 的委托命令误当作真实 Pilot 已经执行。真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已通过；官方执行闸门已经总顾问与独立审核通过。配置冻结与 review 已满足；仍需每次单任务显式授权后，才允许创建或继续写入官方 `benchmark/results/pilot_runs.jsonl`。
+上面的 gate smoke 命令仅用于当时的接线验证，不等于官方 Pilot 结果。官方 Pilot 现已完成，原始结果保存在 `benchmark/results/pilot_runs.jsonl` 与 `benchmark/results/pilot_summary.*`，作为不可改写的历史证据；不要为了重新演示而覆盖这些文件。
 
 ## 安全与阶段边界
 
 - 真实 Provider smoke 需要运行时凭证，但凭证只能由本机安全路径/认证环境提供；任何 Key 都不得进入 repo、fixture、JSONL、终端输出或提交。
-- 当前已经具备真实 JEV HTTP adapter 与本机 OpenCode Go execution provider；仍没有 UI，也没有面向外部 Agent 产品的正式 Adapter。
-- 真实 Provider Gate 的验收证据包含真实 JEV + Router + OpenCode Go 单请求 smoke；这仍不等于 10-task Pilot 已经执行。
+- 当前已经具备真实 JEV HTTP adapter、本机 OpenCode Go execution provider，以及 DeepSeek Harness 插件适配（`/jev` 判断与可选的“自动选择”路由）。仍没有独立正式 UI；P1 阶段的路由原因主要写入决策日志。
+- 真实 Provider Gate 最初只证明真实 JEV + Router + OpenCode Go 单请求链路可用；后续 10-slot 官方 Pilot 已另行完成，不再把 gate smoke 当作 Pilot 结果。
 - 阶段 1 的成功信号是：配置校验通过、T-15 smoke 通过、指定回归通过、完整 pytest 通过、compileall 和 `git diff --check` 无错误。完整测试数量会随后续合法测试变更而变化，因此不在此处硬编码固定总数。
 
-### 官方 Pilot 当前进度
+### 官方 Pilot 历史执行记录
 
 task_001 已完成官方 first attempt 与人工复核：Baseline=manual_passed；Router=manual_failed（预写标准要求 low-capability model，实际选中 medium_model）；JEV audit=reasonable；未触发冻结 repeat 条件。task_002 已完成：Baseline/Router 自动验收均通过，JEV audit=reasonable，Router 生产成本约低于 Baseline 15%，无 fallback/预算异常/重复触发。当前进入 task_003。
 
@@ -158,9 +157,9 @@ task_003 attempt=1 已完成复核：Baseline=manual_failed（新增测试硬编
 
 task_003 已完成全部允许的 repeat：attempt=2 与 attempt=3 均已复核。两次 Baseline 都因新增测试错误写死 model_id 而 manual_failed；两次 Router 都重复出现 `medium_model provider_timeout → high_model budget_limit_reached`，均 manual_failed；JEV audit 均 reasonable，difficulty_score=4，confidence 约 0.44~0.45。冻结策略允许的 2 次额外运行已耗尽，不再允许 attempt=4；当前转入 task_004。
 
-## 当前交接边界
+## Pilot 历史交接点
 
-T-15、10 个 Pilot 任务准备、真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 均已完成。真实 Pilot 尚未开始。当前 `PILOT_OFFICIAL_EXECUTION_GATE` 及 evidence/manual-review subgate 已通过总顾问与独立审核。下一步为 `task_001` 单任务显式授权与真实执行；在获得真实 Pilot 数据前不作 Go / Adjust / Stop 判断。
+T-15、Pilot 任务准备、真实 Provider Gate 与 `PILOT_RUNNER_WIRING` 完成后，项目曾进入 `PILOT_OFFICIAL_EXECUTION_GATE`。该阶段现已结束；下面各 task 小节保留的是当时的逐任务执行记录，其中“进入下一任务”等表述只描述历史推进顺序，不代表当前项目状态。当前状态请以本文顶部“Pilot 与 Adjust 当前状态”和文末 Adjust 执行段为准。
 
 
 ### task_004 repeat 状态
@@ -229,26 +228,28 @@ task_009 attempt=2 已复核：Baseline=manual_passed，Router=manual_passed；R
 task_009 已完成全部允许 repeat：attempt=3 Baseline=manual_passed，Router=manual_passed；Router 与 Baseline 都使用 high_model；JEV audit=reasonable，confidence=0.19、difficulty_score=8。额外运行次数已耗尽，当前进入最后一个受控 task_010_fallback。
 
 
-## Pilot 执行收口状态
+## Pilot 执行收口（已完成）
 
-10 个官方 Pilot slot 已全部完成：task_001..task_009 为真实 Baseline/Router 对比，task_010_fallback 为受控 Mock fallback/budget 验证。当前不再运行官方任务或 repeat，进入 `PILOT_SUMMARY_GATE`，下一步生成并审核 `benchmark/results/pilot_summary.json` 与 `benchmark/results/pilot_summary.md`，再由总顾问依据冻结 Go/Adjust/Stop 标准作最终判断。
+10 个官方 Pilot slot 已全部完成：task_001..task_009 为真实 Baseline/Router 对比，task_010_fallback 为受控 Mock fallback/budget 验证。`PILOT_SUMMARY_GATE` 也已完成，结果已写入 `benchmark/results/pilot_summary.json` 与 `benchmark/results/pilot_summary.md`；总顾问依据冻结 Go/Adjust/Stop 标准给出的正式结论为 **Adjust**。
 
 
 ## Pilot 最终结论
 
 10 个官方 Pilot slot 已完成并生成 `benchmark/results/pilot_summary.json` 与 `benchmark/results/pilot_summary.md`。总顾问结论为 **Adjust**，决策有效性为 **mixed**：JEV 首轮 9/9 人工判断均为 reasonable，受控 fallback/budget 验证通过，成功可比任务中 Router 3/4 成本更低；但首轮验收 Router 4/9，低于 Baseline 6/9，并多次出现 `medium_model provider_timeout → high_model budget_limit_reached`。因此当前不进入真实 Agent 集成/UI，先进入 `PILOT_ADJUST_GATE`，只修 timeout/fallback/budget 相关问题并重跑受影响任务。
 
-## 当前阶段：PILOT_ADJUST_GATE（phase 1）
+## PILOT_ADJUST_GATE（phase 1，已通过）
 
-原始 Pilot 结果是不可改写的历史证据：`benchmark/pilot_config.yaml`、`benchmark/results/pilot_runs.jsonl`、原始 summary 和原始 artifacts 不作为 Adjust 输出。当前只完成离线配置、运行时接线和 preflight gate；Adjust 真实重跑尚未执行。
+原始 Pilot 结果是不可改写的历史证据：`benchmark/pilot_config.yaml`、`benchmark/results/pilot_runs.jsonl`、原始 summary 和原始 artifacts 不作为 Adjust 输出。Phase 1 的离线配置、运行时接线、preflight gate、总顾问审核与独立审核均已通过；项目随后进入 `PILOT_ADJUST_EXECUTION_GATE`，并已开始真实 Router-only Adjust 重跑。
 
 根因是参数交互而非 Router 放弃保守计费：JEV 分类器有正成本时，`0.00004 + medium_model 0.25 + high_model 1.00 = 1.25004`，因此原 `$1.25` 预算会在 medium 超时后阻断 high fallback。Router 仍累计已调用但失败的 primary 估算暴露，不降低 high 估算值。
 
 冻结的 phase-1 Adjust 配置在 `benchmark/pilot_adjust_config.yaml`，严格 loader 为 `benchmark/pilot_adjust_config.py`：timeout `300` 秒，单次 Adjust attempt 预算 `$1.50`，估算上限保持 low `$0.10`、medium `$0.25`、high `$1.00`；受影响任务严格为 `task_003`、`task_004`、`task_005`、`task_006`、`task_008`。新结果只能写入 `benchmark/results/adjust_runs.jsonl` 与 `adjust_artifacts/` 等新路径。
 
-`benchmark/pilot_adjust.py` 目前只支持只读 preflight：它要求原始 Pilot slot 完整且 decision 为 `adjust`，只接受上述五个任务，并且默认不执行任务、不调用 Provider/JEV、不读凭据、不写结果。当前 phase 不包含 UI、数据库、Web server 或 Agent Adapter。PILOT_ADJUST_GATE Phase 1 已经总顾问与独立审核通过；下一道 Gate 是 `PILOT_ADJUST_EXECUTION_GATE`，负责为五个受影响任务建立显式授权、独立 Adjust 结果/Artifacts 和安全重跑顺序。真实 Adjust rerun 尚未执行。
+`benchmark/pilot_adjust.py` 仍是只读 preflight：它要求原始 Pilot slot 完整且 decision 为 `adjust`，只接受上述五个任务，并且默认不执行任务、不调用 Provider/JEV、不读凭据、不写结果。`PILOT_ADJUST_GATE` Phase 1 已经总顾问与独立审核通过；真实重跑由后续 `PILOT_ADJUST_EXECUTION_GATE` 的显式执行路径负责，结果写入独立的 Adjust 文件，不覆盖原始 Pilot。
 
 
 ## PILOT_ADJUST_EXECUTION_GATE
 
-该 Gate 已经总顾问与独立审核通过。Adjust 方法固定为 Router-only，不重跑 Baseline；严格顺序为 task_003 → task_004 → task_005 → task_006 → task_008，每个任务只允许 1 次 Adjust 运行。原始 Pilot 结果继续作为不可修改历史对照。真实 Adjust 尚未开始，下一步为 task_003 单任务 preflight/execution。
+该 Gate 已经总顾问与独立审核通过。Adjust 方法固定为 Router-only，不重跑 Baseline；严格顺序为 task_003 → task_004 → task_005 → task_006 → task_008，每个任务只允许 1 次 Adjust 运行。原始 Pilot 结果继续作为不可修改历史对照。
+
+当前执行进度：`task_003` 的 Adjust 运行已完成，Router route_status=success，选中 `medium_model`，但 acceptance 仍为 failed；JEV audit 为 reasonable。下一项为 `task_004`。详细记录见 `benchmark/results/adjust_runs.jsonl`。
