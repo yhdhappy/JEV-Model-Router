@@ -596,7 +596,19 @@
         }
       ],
       "formal_execution_complete": true,
-      "execution_evidence_final_review": "pending"
+      "execution_evidence_final_review": "passed",
+      "adjust_final_review": {
+        "codex": "passed",
+        "pi_evidence": "passed",
+        "pi_final_code": "passed",
+        "business_fixes_merged": true,
+        "merge_strategy": "fix/adjust-validated-business-fixes",
+        "pr_1_status": "superseded_not_merged",
+        "full_regression": "passed",
+        "console_pytest": "passed",
+        "final_report_completed": true,
+        "timestamp_utc": "2026-10-02T09:00:00Z"
+      }
     },
     "jev_confidence_semantics_gate": {
       "status": "phase1_approved_evidence_collection_only",

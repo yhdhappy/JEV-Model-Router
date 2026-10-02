@@ -323,6 +323,85 @@ def test_parent_directories_append_permissions_and_invalid_input(tmp_path):
         store.append("not a RouteResult")
 
 
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("task_id", "Authorization: Bearer mixed-case-secret"),
+        ("selected_model", "model-with-Bearer bearer-secret-123456"),
+        ("fallback_history", ["api_key=quoted-secret", "access_token: punct-secret;"]),
+        ("fallback_history", ["api-key=dash-secret", "apikey=compact-secret"]),
+        ("fallback_history", ["password='quoted-secret'", "secret= newline-adjacent-secret\nforged"]),
+        ("task_id", "task-sk-live-model-secret-12345678"),
+    ],
+)
+def test_redaction_matrix_covers_requested_secret_markers(tmp_path, field, value):
+    path = tmp_path / "runs.jsonl"
+    store = JsonlLoggingStore(path)
+    store.append(result(**{field: value}))
+
+    text = path.read_text(encoding="utf-8")
+    lines, records = read_records(path)
+    assert len(lines) == 1
+    assert len(records) == 1
+    assert "mixed-case-secret" not in text
+    assert "bearer-secret-123456" not in text
+    assert "quoted-secret" not in text
+    assert "punct-secret" not in text
+    assert "dash-secret" not in text
+    assert "compact-secret" not in text
+    assert "newline-adjacent-secret" not in text
+    assert "sk-live-model-secret-12345678" not in text
+    assert "[REDACTED]" in text
+    record = records[0]
+    assert record["classifier_cost"] == 0.001
+    assert record["execution_cost"] == 0.02
+    assert record["total_production_cost"] == 0.021
+    assert record["selected_model"].startswith("model-with-") or field != "selected_model"
+
+
+def test_safe_default_history_keeps_fallback_used_false(tmp_path):
+    path = tmp_path / "runs.jsonl"
+    store = JsonlLoggingStore(path)
+    store.append(
+        result(
+            route_source="safe_default",
+            fallback_history=["safe_model:success"],
+            errors=[RouteError(code="jev_timeout", message="ignored")],
+        )
+    )
+
+    record = read_records(path)[1][0]
+    assert record["route_source"] == "safe_default"
+    assert record["jev_called"] is True
+    assert record["fallback_used"] is False
+    assert record["fallback_history"] == ["safe_model:success"]
+
+
+def test_real_fallback_route_keeps_fallback_used_true(tmp_path):
+    path = tmp_path / "runs.jsonl"
+    store = JsonlLoggingStore(path)
+    store.append(
+        result(
+            route_source="fallback",
+            selected_model="fallback_model",
+            fallback_history=["primary_model:provider_timeout", "fallback_model:success"],
+            cost=CostBreakdown(
+                classifier_cost=0.001,
+                execution_cost=0.0,
+                fallback_cost=0.006,
+                total_production_cost=0.007,
+                cost_estimated=False,
+                cost_estimation_source="provider_usage",
+            ),
+        )
+    )
+
+    record = read_records(path)[1][0]
+    assert record["route_source"] == "fallback"
+    assert record["fallback_used"] is True
+    assert len(record["fallback_history"]) == 2
+
+
 def test_t10_store_has_no_cli_ui_network_or_credential_surface():
     text = inspect.getsource(JsonlLoggingStore)
     assert "requests" not in text

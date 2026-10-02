@@ -319,6 +319,52 @@ def test_manual_model_is_called_when_budget_allows_and_never_falls_back():
     assert manual.call_count == 1
 
 
+def test_unavailable_candidate_does_not_charge_or_accumulate_cost():
+    result = execute_model_fallback(
+        candidates=["missing_model"],
+        providers={},
+        request=make_request(model_id="missing_model"),
+        current_accumulated_cost=0.0,
+        estimated_next_max_cost=0.25,
+        budget_limit=1.0,
+        cost_by_model={"missing_model": exact_cost(0.25)},
+    )
+
+    attempt = result.fallback_history[0]
+    assert result.status == "failed"
+    assert attempt.called is False
+    assert attempt.error_code == "model_unavailable"
+    assert attempt.cost is None
+    assert result.current_accumulated_cost == 0.0
+
+
+def test_called_provider_failure_still_preserves_supplied_cost_and_fallback():
+    primary = MockProvider([MockScenario.UNAVAILABLE])
+    fallback = MockProvider([success_response()])
+
+    result = execute_model_fallback(
+        candidates=["primary_model", "fallback_1"],
+        providers={"primary_model": primary, "fallback_1": fallback},
+        request=make_request(),
+        current_accumulated_cost=0.0,
+        estimated_next_max_cost={"primary_model": 0.10, "fallback_1": 0.10},
+        budget_limit=0.20,
+        cost_by_model={
+            "primary_model": exact_cost(0.01),
+            "fallback_1": exact_cost(0.02),
+        },
+    )
+
+    assert result.status == "success"
+    assert result.fallback_history[0].called is True
+    assert result.fallback_history[0].cost.cost == 0.01
+    assert result.fallback_history[1].called is True
+    assert result.fallback_history[1].cost.cost == 0.02
+    assert result.fallback_cost.cost == 0.02
+    assert primary.call_count == 1
+    assert fallback.call_count == 1
+
+
 def test_manual_provider_failure_is_returned_without_substitute_model():
     manual = MockProvider([MockScenario.UNAVAILABLE])
 
